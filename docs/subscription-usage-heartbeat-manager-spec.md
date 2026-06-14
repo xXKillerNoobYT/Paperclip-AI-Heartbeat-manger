@@ -101,7 +101,9 @@ Required behavior:
 - Every planning output must include `mode: "dry_run"`, `mutationsEnabled: false`, and `requiresOwnerApprovalForLiveMutation: true` so a plan cannot be mistaken for a mutation.
 - Live wake execution must re-read the selected agent immediately before invoking `/agents/{agentId}/heartbeat/invoke` and skip if the agent is running/busy/working or already has active live work.
 - Live hold/release execution must re-read each issue/agent immediately before mutation and skip any running issue, active run, or running agent.
-- Live execution must write a JSONL decision log and a JSON idempotency/fencing store. Reusing the same `decisionId` must return a duplicate result and perform no Paperclip mutation.
+- Live execution must fail closed unless both a non-empty JSONL decision log path and a non-empty JSON idempotency/fencing store path are configured. It must write the idempotency/fencing store before mutation and append decision-log evidence for completed and duplicate decisions.
+- Live idempotency must use stable operation fingerprints, not timestamp-derived dry-run decision ids. Rerunning the same live wake/hold/release command seconds later must return a duplicate result and perform no Paperclip mutation.
+- Live hold execution must persist a namespaced `holdState.source === "heartbeat_manager_hold_plan"` marker containing previous issue status or heartbeat state, decision id, fencing token, reason, and reset target so reset/release mode can identify only records the heartbeat manager held.
 - Live hold/release comments must include decision id, fencing token, reason, prior/restored status, and non-interruption evidence.
 - Emergency disable is `config.live.enabled=false` or running the CLI without `--live`; dry-run must remain the default.
 

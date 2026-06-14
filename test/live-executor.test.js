@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { buildHoldPlan } from '../src/hold-plan.js';
 import { executeLiveDecision } from '../src/live-executor.js';
 
 const now = '2026-06-15T12:00:00.000Z';
@@ -82,7 +83,51 @@ test('live wake invokes Paperclip only after rechecking that the selected agent 
     assert.deepEqual(client.calls.map((call) => call.method), ['getAgent', 'wakeAgent']);
     assert.equal(client.calls[1].agentId, 'agent-1');
     assert.equal(client.calls[1].body.forceFreshSession, true);
-    assert.equal(client.calls[1].body.metadata.decisionId, 'decision-1');
+    assert.match(client.calls[1].body.metadata.decisionId, /^live:wake:/);
+  });
+});
+
+test('live wake idempotency uses stable operation fingerprint instead of timestamp decision ids', async () => {
+  await withLivePaths('heartbeat-live-stable-fingerprint-', async ({ idempotencyPath, decisionLogPath }) => {
+    const client = new MockPaperclipClient({
+      agents: {
+        'agent-1': { id: 'agent-1', name: 'CEO', status: 'idle', runtimeConfig: { heartbeat: { enabled: false } } },
+      },
+    });
+
+    const baseDecision = {
+      type: 'wake',
+      reason: 'quota has room',
+      agentId: 'agent-1',
+      companyId: 'company-1',
+      providerPoolId: 'pool-1',
+      selectedParticipantId: 'participant-1',
+    };
+
+    const first = await executeLiveDecision({
+      decision: { ...baseDecision, decisionId: '2026-06-15T12:00:00.000Z:pool-1:participant-1' },
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now: '2026-06-15T12:00:00.000Z',
+      idempotencyPath,
+      decisionLogPath,
+    });
+    const duplicate = await executeLiveDecision({
+      decision: { ...baseDecision, decisionId: '2026-06-15T12:00:01.000Z:pool-1:participant-1' },
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now: '2026-06-15T12:00:01.000Z',
+      idempotencyPath,
+      decisionLogPath,
+    });
+
+    assert.equal(first.invoked, true);
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(duplicate.invoked, false);
+    assert.equal(client.calls.filter((call) => call.method === 'wakeAgent').length, 1);
+    assert.equal(first.decisionId, duplicate.decisionId);
   });
 });
 
@@ -157,7 +202,7 @@ test('live hold plan patches issues/agents, writes comments, records idempotency
       'getAgent',
       'updateAgent',
     ]);
-    assert.match(client.comments['WEI-1'][0], /Decision: hold-decision-1/);
+    assert.match(client.comments['WEI-1'][0], /Decision: live:hold_plan:/);
 
     const duplicate = await executeLiveDecision({
       holdPlan,
@@ -174,7 +219,7 @@ test('live hold plan patches issues/agents, writes comments, records idempotency
     assert.equal(client.calls.length, 5);
 
     const idempotency = JSON.parse(await readFile(idempotencyPath, 'utf8'));
-    assert.equal(idempotency.decisions['hold-decision-1'].completed, true);
+    assert.equal(idempotency.decisions[result.decisionId].completed, true);
     const logLines = (await readFile(decisionLogPath, 'utf8')).trim().split('\n');
     assert.equal(logLines.length, 2);
   } finally {
@@ -259,6 +304,74 @@ test('live release plan restores only planned issue status and heartbeat setting
   });
 });
 
+test('live hold persists hold state that a later release plan can consume', async () => {
+  await withLivePaths('heartbeat-live-durable-hold-', async ({ idempotencyPath, decisionLogPath }) => {
+    const client = new MockPaperclipClient({
+      issues: {
+        'WEI-9': { id: 'issue-9', identifier: 'WEI-9', status: 'todo' },
+      },
+      agents: {
+        'agent-9': {
+          id: 'agent-9',
+          name: 'Held Agent',
+          status: 'idle',
+          runtimeConfig: { heartbeat: { enabled: true, intervalSec: 7200, wakeOnDemand: true } },
+        },
+      },
+    });
+    const holdPlan = buildHoldPlan({
+      companyId: 'company-1',
+      generatedAt: now,
+      trigger: { state: 'hold', reason: 'weekly hard stop', resetAt: '2026-06-16T00:00:00.000Z' },
+      issues: Object.values(client.issues),
+      agents: Object.values(client.agents),
+    });
+
+    await executeLiveDecision({
+      holdPlan,
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now,
+      idempotencyPath,
+      decisionLogPath,
+    });
+
+    assert.equal(client.issues['WEI-9'].status, 'blocked');
+    assert.equal(client.issues['WEI-9'].holdState.source, 'heartbeat_manager_hold_plan');
+    assert.equal(client.issues['WEI-9'].holdState.previousStatus, 'todo');
+    assert.equal(client.agents['agent-9'].holdState.source, 'heartbeat_manager_hold_plan');
+    assert.equal(client.agents['agent-9'].holdState.previousHeartbeatEnabled, true);
+
+    const releasePlan = buildHoldPlan({
+      companyId: 'company-1',
+      generatedAt: '2026-06-16T00:00:00.000Z',
+      trigger: { state: 'release', reason: 'weekly reset' },
+      issues: Object.values(client.issues),
+      agents: Object.values(client.agents),
+    });
+
+    assert.equal(releasePlan.issueActions[0].action, 'resume_issue');
+    assert.equal(releasePlan.issueActions[0].toStatus, 'todo');
+    assert.equal(releasePlan.agentActions[0].action, 'restore_interval_heartbeat');
+
+    await executeLiveDecision({
+      holdPlan: releasePlan,
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now: '2026-06-16T00:00:00.000Z',
+      idempotencyPath,
+      decisionLogPath,
+    });
+
+    assert.equal(client.issues['WEI-9'].status, 'todo');
+    assert.equal(client.issues['WEI-9'].holdState, null);
+    assert.equal(client.agents['agent-9'].runtimeConfig.heartbeat.enabled, true);
+    assert.equal(client.agents['agent-9'].holdState, null);
+  });
+});
+
 test('live hold execution surfaces Paperclip API failures instead of marking duplicate complete', async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), 'heartbeat-live-failure-'));
   try {
@@ -292,7 +405,9 @@ test('live hold execution surfaces Paperclip API failures instead of marking dup
     );
 
     const idempotency = JSON.parse(await readFile(idempotencyPath, 'utf8'));
-    assert.equal(idempotency.decisions['hold-failure-1'].completed, false);
+    const [storedDecision] = Object.values(idempotency.decisions);
+    assert.match(storedDecision.decisionId, /^live:hold_plan:/);
+    assert.equal(storedDecision.completed, false);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

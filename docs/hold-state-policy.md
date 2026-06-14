@@ -54,12 +54,13 @@ Release mode resumes only state that the hold plan owns:
   2. CLI `--live` instead of `--dry-run`.
   3. Exact `--confirm-live` text matching `config.live.confirmationText`.
   4. A Paperclip API base URL.
-  5. A JSON idempotency/fencing store so duplicate `decisionId` values cannot mutate twice.
-  6. A short-lived local lock around the idempotency store so concurrent processes cannot both execute the same decision before either one marks it complete.
+  5. A JSON idempotency/fencing store so duplicate operation fingerprints cannot mutate twice, even when the dry-run decision id timestamp changes.
+  6. A short-lived local lock around the idempotency store so concurrent processes cannot both execute the same operation before either one marks it complete.
   7. A JSONL decision log path for reviewable operator evidence; wake responses are compacted to run/status identifiers rather than full response bodies.
 - Before applying an issue hold or release, the live executor re-reads the issue and skips it if a live run or execution run is present.
 - Before disabling/restoring an agent heartbeat, the live executor re-reads the agent and skips it if the agent is running/busy/working.
 - Hold execution posts an issue comment explaining decision id, fencing token, prior status, reason, reset target, and non-interruption safety before changing status.
+- Hold execution persists `holdState.source === "heartbeat_manager_hold_plan"` with the prior issue status or heartbeat-enabled state, decision id, fencing token, reason, and reset target; release mode consumes that marker and clears it when restoring state.
 - Release execution posts an issue comment explaining decision id, fencing token, reason, and restored status before changing status.
 - Any emergency override should be manager/operator-owned, comment why the hold was bypassed, preserve evidence of provider/budget state, and disable live mode by setting `config.live.enabled=false` or running only `--dry-run`.
 
@@ -104,5 +105,6 @@ The test suite covers:
 - weekly/session reset release behavior for hold-plan-managed issues/agents only;
 - dry-run/no-mutation mode;
 - live fail-closed config/confirmation checks;
-- live duplicate-decision idempotency and concurrent duplicate fencing;
+- live stable operation-fingerprint idempotency across timestamp changes and concurrent duplicate fencing;
+- live durable hold-state markers followed by release planning from post-hold state;
 - live wake, hold, release, API failure surface, and running-work preservation with mocked Paperclip API.

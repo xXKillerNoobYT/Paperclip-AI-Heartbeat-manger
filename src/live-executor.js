@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -5,6 +6,7 @@ const DEFAULT_CONFIRMATION = 'I understand this mutates live Paperclip state';
 const RUNNING_AGENT_STATUSES = new Set(['running', 'busy', 'working', 'in_progress']);
 const ACTIVE_ISSUE_RUN_FIELDS = ['currentRunId', 'executionRunId', 'checkoutRunId'];
 const IDEMPOTENCY_LOCK_STALE_MS = 5 * 60 * 1000;
+const HOLD_SOURCE = 'heartbeat_manager_hold_plan';
 
 export async function executeLiveDecision({
   decision,
@@ -46,7 +48,7 @@ async function executeLiveDecisionWithLock({
   idempotencyPath,
 } = {}) {
   const idempotency = await readIdempotencyStore(idempotencyPath);
-  const decisionId = liveDecisionId(decision, holdPlan, now);
+  const decisionId = liveDecisionId(decision, holdPlan);
   if (idempotency.decisions[decisionId]?.completed === true) {
     const result = {
       decisionId,
@@ -163,14 +165,17 @@ async function executeHoldPlan({ holdPlan, client, config, now, decisionId, fenc
     if (action.action === 'hold_issue') {
       const comment = holdComment({ action, holdPlan, decisionId, fencingToken });
       await client.commentIssue(action.identifier, comment);
-      const response = await client.updateIssue(action.identifier, { status: action.toStatus });
+      const response = await client.updateIssue(action.identifier, {
+        status: action.toStatus,
+        holdState: holdStateForIssue({ action, holdPlan, decisionId, fencingToken, now }),
+      });
       actions.push({ ...action, response: compactIssue(response) });
       continue;
     }
     if (action.action === 'resume_issue') {
       const comment = releaseComment({ action, holdPlan, decisionId, fencingToken });
       await client.commentIssue(action.identifier, comment);
-      const response = await client.updateIssue(action.identifier, { status: action.toStatus });
+      const response = await client.updateIssue(action.identifier, { status: action.toStatus, holdState: null });
       actions.push({ ...action, response: compactIssue(response) });
     }
   }
@@ -185,6 +190,7 @@ async function executeHoldPlan({ holdPlan, client, config, now, decisionId, fenc
       const heartbeat = { ...(agent.runtimeConfig?.heartbeat ?? {}), enabled: false };
       const response = await client.updateAgent(action.agentId, {
         runtimeConfig: { ...(agent.runtimeConfig ?? {}), heartbeat },
+        holdState: holdStateForAgent({ action, holdPlan, decisionId, fencingToken, now, agent }),
       });
       actions.push({ ...action, response: compactAgent(response) });
       continue;
@@ -193,6 +199,7 @@ async function executeHoldPlan({ holdPlan, client, config, now, decisionId, fenc
       const heartbeat = { ...(agent.runtimeConfig?.heartbeat ?? {}), enabled: true };
       const response = await client.updateAgent(action.agentId, {
         runtimeConfig: { ...(agent.runtimeConfig ?? {}), heartbeat },
+        holdState: null,
       });
       actions.push({ ...action, response: compactAgent(response) });
     }
@@ -237,6 +244,30 @@ function releaseComment({ action, decisionId, fencingToken }) {
   ].join('\n');
 }
 
+function holdStateForIssue({ action, holdPlan, decisionId, fencingToken, now }) {
+  return {
+    source: HOLD_SOURCE,
+    decisionId,
+    fencingToken,
+    heldAt: now,
+    reason: action.reason,
+    previousStatus: action.fromStatus,
+    releaseResetAt: holdPlan.release?.resetAt ?? null,
+  };
+}
+
+function holdStateForAgent({ action, holdPlan, decisionId, fencingToken, now, agent }) {
+  return {
+    source: HOLD_SOURCE,
+    decisionId,
+    fencingToken,
+    heldAt: now,
+    reason: action.reason,
+    previousHeartbeatEnabled: agent.runtimeConfig?.heartbeat?.enabled === true,
+    releaseResetAt: holdPlan.release?.resetAt ?? null,
+  };
+}
+
 function agentIsRunning(agent) {
   return RUNNING_AGENT_STATUSES.has(String(agent?.status ?? '').toLowerCase()) || agent?.liveRunActive === true;
 }
@@ -247,8 +278,35 @@ function issueHasRunningWork(issue) {
   return ACTIVE_ISSUE_RUN_FIELDS.some((field) => Boolean(issue?.[field]));
 }
 
-function liveDecisionId(decision, holdPlan, now) {
-  return (decision?.decisionId ?? holdPlan?.decisionId ?? `${now}:hold-plan`).replace(/[^a-zA-Z0-9_.:-]/g, '_');
+function liveDecisionId(decision, holdPlan) {
+  return operationFingerprint(decision, holdPlan);
+}
+
+function operationFingerprint(decision, holdPlan) {
+  const operation = holdPlan
+    ? {
+      type: 'hold_plan',
+      companyId: holdPlan.companyId ?? null,
+      issueActions: stableActionList(holdPlan.issueActions ?? [], ['identifier', 'id', 'action', 'fromStatus', 'toStatus', 'reason']),
+      agentActions: stableActionList(holdPlan.agentActions ?? [], ['agentId', 'action', 'reason']),
+      release: { eligible: holdPlan.release?.eligible ?? null, resetAt: holdPlan.release?.resetAt ?? null },
+    }
+    : {
+      type: decision?.type ?? null,
+      companyId: decision?.companyId ?? null,
+      agentId: decision?.agentId ?? null,
+      providerPoolId: decision?.providerPoolId ?? null,
+      selectedParticipantId: decision?.selectedParticipantId ?? null,
+      reason: decision?.reason ?? null,
+    };
+  const digest = createHash('sha256').update(JSON.stringify(operation)).digest('hex').slice(0, 24);
+  return `live:${operation.type ?? 'unknown'}:${digest}`;
+}
+
+function stableActionList(actions, keys) {
+  return actions
+    .map((action) => Object.fromEntries(keys.map((key) => [key, action[key] ?? null])))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
 async function appendDecisionLog(decisionLogPath, entry) {

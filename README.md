@@ -149,7 +149,7 @@ node ./bin/paperclip-heartbeat-manager.js hold-plan \
   --idempotency-store ./logs/heartbeat-manager-idempotency.json
 ```
 
-Live mode is fail-closed. It requires `config.live.enabled: true`, the exact confirmation text, a Paperclip API base URL, and an idempotency store path for duplicate-decision fencing. Before mutating, the executor re-reads the selected agent or issue and skips anything that is already running/live. The idempotency store is guarded by a short-lived local lock and atomic replacement so concurrent processes cannot execute the same `decisionId` twice. Every completed decision is appended to the JSONL decision log, wake responses are compacted to non-secret identifiers/status fields, and duplicate decision IDs return `duplicate: true` without invoking Paperclip again.
+Live mode is fail-closed. It requires `config.live.enabled: true`, the exact confirmation text, a Paperclip API base URL, a non-empty idempotency store path, and a non-empty decision log path. Before mutating, the executor re-reads the selected agent or issue and skips anything that is already running/live. The idempotency store is guarded by a short-lived local lock and atomic replacement so concurrent processes cannot execute the same operation twice. Live idempotency uses a stable operation fingerprint, not the timestamp-derived dry-run `decisionId`, so rerunning the same wake/hold/release command seconds later returns `duplicate: true` without invoking Paperclip again. Every completed or duplicate decision is appended to the JSONL decision log, and wake responses are compacted to non-secret identifiers/status fields.
 
 The Paperclip source currently reads:
 
@@ -198,10 +198,11 @@ Live mode is intentionally gated for owner/operator approval and SecurityAgent r
 
 - `config.live.enabled` must be `true`; the checked-in example keeps it `false`.
 - The CLI must pass `--live` and the exact `--confirm-live` text.
-- The executor writes a decision log and idempotency/fencing store before performing any mutation; the idempotency store uses a local lock plus atomic replacement to fence concurrent duplicate decisions.
+- The executor requires and writes a decision log and idempotency/fencing store before performing any mutation; the idempotency store uses a local lock plus atomic replacement to fence concurrent duplicate operations.
 - Wake execution re-reads the selected agent and skips if it is running/busy/working.
 - Hold/release execution re-reads each issue/agent and skips currently running work immediately before mutation.
-- Duplicate decision IDs are fenced and do not invoke Paperclip twice; JSONL decision logs compact Paperclip wake responses to run/status identifiers instead of storing full response bodies.
+- Live hold execution persists a namespaced `holdState` marker with previous issue status / heartbeat state so a later release plan can safely identify only heartbeat-manager-held records.
+- Duplicate operation fingerprints are fenced and do not invoke Paperclip twice even when the dry-run decision timestamp changes; JSONL decision logs compact Paperclip wake responses to run/status identifiers instead of storing full response bodies.
 - Emergency disable is to set `config.live.enabled=false`, remove `--live`, or point automation back to `--dry-run`.
 
 ---
