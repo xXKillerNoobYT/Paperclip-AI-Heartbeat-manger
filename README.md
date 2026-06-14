@@ -54,6 +54,8 @@ src/
 ├── index.js                         # Public ESM exports for npm consumers
 ├── pacing.js                        # Session/weekly pacing gates
 ├── paperclip-client.js              # Paperclip API adapter scaffold
+├── paperclip-discovery.js           # Discovers live agents and assigned actionable issues
+├── paperclip-usage-provider.js      # Reads Paperclip Costs quota windows for scheduler telemetry
 ├── scheduler.js                     # Dry-run decision orchestration
 ├── hold-plan.js                     # Dry-run issue/agent hold and release planner
 ├── live-executor.js                 # Explicit opt-in live wake/hold/resume executor
@@ -170,6 +172,28 @@ npx paperclip-heartbeat-manager decide --dry-run \
 ```
 
 The CLI resolves relative fixture paths from the config file location, so the packaged example config works after `npm install` from any consumer project directory.
+
+To tap into Paperclip's built-in Costs → Providers telemetry instead of maintaining a separate usage fixture, point the same config at a live Paperclip API and set `usageSource` to `paperclip` or pass it on the command line:
+
+```bash
+npx paperclip-heartbeat-manager decide --dry-run \
+  --config ./node_modules/paperclip-ai-heartbeat-manager/examples/heartbeat-manager.config.json \
+  --usage-source paperclip \
+  --paperclip-base-url http://localhost:3100/api \
+  --company-id 803d6ebd-cc2a-415f-8bbf-6a800fa36d20
+```
+
+The Paperclip source reads `/companies/:companyId/costs/quota-windows`, matches each configured provider pool by `provider` (`anthropic`, `openai`, etc.), and normalizes the reported 5h/6h and weekly quota windows into the scheduler's `session_6h` and `weekly` pacing inputs. If Paperclip reports a provider polling failure or missing window, the scheduler receives missing telemetry and safely holds rather than waking agents blindly.
+
+To use Paperclip's existing company/agent/issue state for participants instead of writing a static `participants` array, add `--discover-paperclip-participants` (or set `participantsSource: "paperclip"` / `paperclip.participants.enabled: true`). The discovery path reads `/companies/:companyId`, `/agents`, and `/issues`, then builds fair-turn candidates from wake-capable agents and their assigned `todo`, `backlog`, or `in_progress` issues:
+
+```bash
+npx paperclip-heartbeat-manager decide --dry-run \
+  --config ./heartbeat-manager.config.json \
+  --paperclip-base-url http://localhost:3100/api \
+  --company-id 803d6ebd-cc2a-415f-8bbf-6a800fa36d20 \
+  --discover-paperclip-participants
+```
 
 The package exposes both:
 
