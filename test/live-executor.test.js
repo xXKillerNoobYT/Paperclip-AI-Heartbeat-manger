@@ -16,6 +16,18 @@ const config = {
   },
 };
 
+async function withLivePaths(prefix, fn) {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), prefix));
+  try {
+    return await fn({
+      idempotencyPath: path.join(tmp, 'idempotency.json'),
+      decisionLogPath: path.join(tmp, 'decisions.jsonl'),
+    });
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
 test('live mode fails closed unless enabled and confirmed', async () => {
   await assert.rejects(
     () => executeLiveDecision({
@@ -41,53 +53,61 @@ test('live mode fails closed unless enabled and confirmed', async () => {
 });
 
 test('live wake invokes Paperclip only after rechecking that the selected agent is not running', async () => {
-  const client = new MockPaperclipClient({
-    agents: {
-      'agent-1': { id: 'agent-1', name: 'CEO', status: 'idle', runtimeConfig: { heartbeat: { enabled: false } } },
-    },
-  });
+  await withLivePaths('heartbeat-live-wake-', async ({ idempotencyPath, decisionLogPath }) => {
+    const client = new MockPaperclipClient({
+      agents: {
+        'agent-1': { id: 'agent-1', name: 'CEO', status: 'idle', runtimeConfig: { heartbeat: { enabled: false } } },
+      },
+    });
 
-  const result = await executeLiveDecision({
-    decision: {
-      decisionId: 'decision-1',
-      type: 'wake',
-      reason: 'quota has room',
-      agentId: 'agent-1',
-      companyId: 'company-1',
-      providerPoolId: 'pool-1',
-      selectedParticipantId: 'participant-1',
-    },
-    client,
-    config,
-    confirmation: 'APPROVE LIVE TEST',
-    now,
-  });
+    const result = await executeLiveDecision({
+      decision: {
+        decisionId: 'decision-1',
+        type: 'wake',
+        reason: 'quota has room',
+        agentId: 'agent-1',
+        companyId: 'company-1',
+        providerPoolId: 'pool-1',
+        selectedParticipantId: 'participant-1',
+      },
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now,
+      idempotencyPath,
+      decisionLogPath,
+    });
 
-  assert.equal(result.invoked, true);
-  assert.deepEqual(client.calls.map((call) => call.method), ['getAgent', 'wakeAgent']);
-  assert.equal(client.calls[1].agentId, 'agent-1');
-  assert.equal(client.calls[1].body.forceFreshSession, true);
-  assert.equal(client.calls[1].body.metadata.decisionId, 'decision-1');
+    assert.equal(result.invoked, true);
+    assert.deepEqual(client.calls.map((call) => call.method), ['getAgent', 'wakeAgent']);
+    assert.equal(client.calls[1].agentId, 'agent-1');
+    assert.equal(client.calls[1].body.forceFreshSession, true);
+    assert.equal(client.calls[1].body.metadata.decisionId, 'decision-1');
+  });
 });
 
 test('live wake preserves a selected agent that became running before execution', async () => {
-  const client = new MockPaperclipClient({
-    agents: {
-      'agent-1': { id: 'agent-1', name: 'CEO', status: 'running', runtimeConfig: { heartbeat: { enabled: false } } },
-    },
-  });
+  await withLivePaths('heartbeat-live-running-', async ({ idempotencyPath, decisionLogPath }) => {
+    const client = new MockPaperclipClient({
+      agents: {
+        'agent-1': { id: 'agent-1', name: 'CEO', status: 'running', runtimeConfig: { heartbeat: { enabled: false } } },
+      },
+    });
 
-  const result = await executeLiveDecision({
-    decision: { decisionId: 'decision-running', type: 'wake', reason: 'quota has room', agentId: 'agent-1' },
-    client,
-    config,
-    confirmation: 'APPROVE LIVE TEST',
-    now,
-  });
+    const result = await executeLiveDecision({
+      decision: { decisionId: 'decision-running', type: 'wake', reason: 'quota has room', agentId: 'agent-1' },
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now,
+      idempotencyPath,
+      decisionLogPath,
+    });
 
-  assert.equal(result.invoked, false);
-  assert.equal(result.skipped[0].reason, 'agent_currently_running_preserved');
-  assert.deepEqual(client.calls.map((call) => call.method), ['getAgent']);
+    assert.equal(result.invoked, false);
+    assert.equal(result.skipped[0].reason, 'agent_currently_running_preserved');
+    assert.deepEqual(client.calls.map((call) => call.method), ['getAgent']);
+  });
 });
 
 test('live hold plan patches issues/agents, writes comments, records idempotency, and skips duplicates', async () => {
@@ -163,45 +183,50 @@ test('live hold plan patches issues/agents, writes comments, records idempotency
 });
 
 test('live release plan restores only planned issue status and heartbeat settings', async () => {
-  const client = new MockPaperclipClient({
-    issues: {
-      'WEI-7': { id: 'issue-7', identifier: 'WEI-7', status: 'blocked' },
-    },
-    agents: {
-      'agent-7': {
-        id: 'agent-7',
-        name: 'Held Agent',
-        status: 'idle',
-        runtimeConfig: { heartbeat: { enabled: false, intervalSec: 7200, wakeOnDemand: true } },
+  await withLivePaths('heartbeat-live-release-', async ({ idempotencyPath, decisionLogPath }) => {
+    const client = new MockPaperclipClient({
+      issues: {
+        'WEI-7': { id: 'issue-7', identifier: 'WEI-7', status: 'blocked' },
       },
-    },
-  });
+      agents: {
+        'agent-7': {
+          id: 'agent-7',
+          name: 'Held Agent',
+          status: 'idle',
+          runtimeConfig: { heartbeat: { enabled: false, intervalSec: 7200, wakeOnDemand: true } },
+        },
+      },
+    });
 
-  const result = await executeLiveDecision({
-    holdPlan: {
-      decisionId: 'release-decision-1',
-      issueActions: [{ identifier: 'WEI-7', id: 'issue-7', action: 'resume_issue', fromStatus: 'blocked', toStatus: 'todo', reason: 'weekly reset' }],
-      skippedIssues: [],
-      agentActions: [{ agentId: 'agent-7', agentName: 'Held Agent', action: 'restore_interval_heartbeat', reason: 'weekly reset' }],
-      skippedAgents: [],
-      release: { resetAt: now },
-    },
-    client,
-    config,
-    confirmation: 'APPROVE LIVE TEST',
-    now,
-  });
+    const result = await executeLiveDecision({
+      holdPlan: {
+        decisionId: 'release-decision-1',
+        issueActions: [{ identifier: 'WEI-7', id: 'issue-7', action: 'resume_issue', fromStatus: 'blocked', toStatus: 'todo', reason: 'weekly reset' }],
+        skippedIssues: [],
+        agentActions: [{ agentId: 'agent-7', agentName: 'Held Agent', action: 'restore_interval_heartbeat', reason: 'weekly reset' }],
+        skippedAgents: [],
+        release: { resetAt: now },
+      },
+      client,
+      config,
+      confirmation: 'APPROVE LIVE TEST',
+      now,
+      idempotencyPath,
+      decisionLogPath,
+    });
 
-  assert.equal(result.invoked, true);
-  assert.equal(client.issues['WEI-7'].status, 'todo');
-  assert.equal(client.agents['agent-7'].runtimeConfig.heartbeat.enabled, true);
-  assert.match(client.comments['WEI-7'][0], /hold released/);
+    assert.equal(result.invoked, true);
+    assert.equal(client.issues['WEI-7'].status, 'todo');
+    assert.equal(client.agents['agent-7'].runtimeConfig.heartbeat.enabled, true);
+    assert.match(client.comments['WEI-7'][0], /hold released/);
+  });
 });
 
 test('live hold execution surfaces Paperclip API failures instead of marking duplicate complete', async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), 'heartbeat-live-failure-'));
   try {
     const idempotencyPath = path.join(tmp, 'idempotency.json');
+    const decisionLogPath = path.join(tmp, 'decisions.jsonl');
     const client = new MockPaperclipClient({
       issues: {
         'WEI-FAIL': { id: 'issue-fail', identifier: 'WEI-FAIL', status: 'todo' },
@@ -224,6 +249,7 @@ test('live hold execution surfaces Paperclip API failures instead of marking dup
         confirmation: 'APPROVE LIVE TEST',
         now,
         idempotencyPath,
+        decisionLogPath,
       }),
       /mock updateIssue failure/,
     );
@@ -233,6 +259,55 @@ test('live hold execution surfaces Paperclip API failures instead of marking dup
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
+});
+
+
+test('live mode requires durable idempotency store path before Paperclip mutation', async () => {
+  await withLivePaths('heartbeat-live-missing-idempotency-', async ({ decisionLogPath }) => {
+    const client = new MockPaperclipClient({
+      agents: {
+        'agent-1': { id: 'agent-1', name: 'CEO', status: 'idle' },
+      },
+    });
+
+    await assert.rejects(
+      () => executeLiveDecision({
+        decision: { decisionId: 'missing-idempotency', type: 'wake', reason: 'quota has room', agentId: 'agent-1' },
+        client,
+        config,
+        confirmation: 'APPROVE LIVE TEST',
+        now,
+        decisionLogPath,
+      }),
+      /idempotency store path/,
+    );
+
+    assert.deepEqual(client.calls, []);
+  });
+});
+
+test('live mode requires durable decision log path before Paperclip mutation', async () => {
+  await withLivePaths('heartbeat-live-missing-decision-log-', async ({ idempotencyPath }) => {
+    const client = new MockPaperclipClient({
+      agents: {
+        'agent-1': { id: 'agent-1', name: 'CEO', status: 'idle' },
+      },
+    });
+
+    await assert.rejects(
+      () => executeLiveDecision({
+        decision: { decisionId: 'missing-decision-log', type: 'wake', reason: 'quota has room', agentId: 'agent-1' },
+        client,
+        config,
+        confirmation: 'APPROVE LIVE TEST',
+        now,
+        idempotencyPath,
+      }),
+      /decision log path/,
+    );
+
+    assert.deepEqual(client.calls, []);
+  });
 });
 
 class MockPaperclipClient {

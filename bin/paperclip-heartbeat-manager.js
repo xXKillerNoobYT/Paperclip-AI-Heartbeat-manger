@@ -66,8 +66,8 @@ async function main(argv) {
         config,
         confirmation: valueAfter(args, '--confirm-live'),
         now,
-        decisionLogPath: valueAfter(args, '--decision-log') ?? config.live?.decisionLogPath,
-        idempotencyPath: valueAfter(args, '--idempotency-store') ?? config.live?.idempotencyStorePath,
+        decisionLogPath: resolvePath(valueAfter(args, '--decision-log') ?? config.live?.decisionLogPath, configDir),
+        idempotencyPath: resolvePath(valueAfter(args, '--idempotency-store') ?? config.live?.idempotencyStorePath, configDir),
       });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
@@ -87,8 +87,8 @@ async function main(argv) {
         config,
         confirmation: valueAfter(args, '--confirm-live'),
         now,
-        decisionLogPath: valueAfter(args, '--decision-log') ?? config.live?.decisionLogPath,
-        idempotencyPath: valueAfter(args, '--idempotency-store') ?? config.live?.idempotencyStorePath,
+        decisionLogPath: resolvePath(valueAfter(args, '--decision-log') ?? config.live?.decisionLogPath, configDir),
+        idempotencyPath: resolvePath(valueAfter(args, '--idempotency-store') ?? config.live?.idempotencyStorePath, configDir),
       });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;

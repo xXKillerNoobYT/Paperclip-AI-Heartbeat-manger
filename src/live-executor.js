@@ -16,6 +16,7 @@ export async function executeLiveDecision({
   idempotencyPath,
 } = {}) {
   assertLiveEnabled({ config, confirmation });
+  assertDurableLivePaths({ decisionLogPath, idempotencyPath });
   if (!client) throw new Error('executeLiveDecision requires a Paperclip client');
 
   const idempotency = await readIdempotencyStore(idempotencyPath);
@@ -65,6 +66,15 @@ export function assertLiveEnabled({ config = {}, confirmation } = {}) {
   const expected = config.live.confirmationText ?? DEFAULT_CONFIRMATION;
   if (confirmation !== expected) {
     throw new Error(`live mode confirmation mismatch; expected: ${expected}`);
+  }
+}
+
+export function assertDurableLivePaths({ decisionLogPath, idempotencyPath } = {}) {
+  if (typeof idempotencyPath !== 'string' || idempotencyPath.trim().length === 0) {
+    throw new Error('live mode requires a non-empty idempotency store path');
+  }
+  if (typeof decisionLogPath !== 'string' || decisionLogPath.trim().length === 0) {
+    throw new Error('live mode requires a non-empty decision log path');
   }
 }
 
@@ -216,13 +226,11 @@ function liveDecisionId(decision, holdPlan, now) {
 }
 
 async function appendDecisionLog(decisionLogPath, entry) {
-  if (!decisionLogPath) return;
   await mkdir(path.dirname(decisionLogPath), { recursive: true });
   await writeFile(decisionLogPath, `${JSON.stringify(entry)}\n`, { flag: 'a' });
 }
 
 async function readIdempotencyStore(idempotencyPath) {
-  if (!idempotencyPath) return { schemaVersion: 1, lastFencingToken: 0, decisions: {} };
   try {
     const parsed = JSON.parse(await readFile(idempotencyPath, 'utf8'));
     return {
@@ -237,7 +245,6 @@ async function readIdempotencyStore(idempotencyPath) {
 }
 
 async function writeIdempotencyStore(idempotencyPath, store) {
-  if (!idempotencyPath) return;
   await mkdir(path.dirname(idempotencyPath), { recursive: true });
   await writeFile(idempotencyPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
 }
