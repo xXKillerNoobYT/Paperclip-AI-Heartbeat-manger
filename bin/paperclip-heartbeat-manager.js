@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
+import { dirname, isAbsolute, resolve } from 'node:path';
 
 import { readFixtureUsage } from '../src/fixture-provider.js';
 import { decideDryRun } from '../src/scheduler.js';
@@ -19,8 +20,9 @@ async function main(argv) {
     throw new Error('real wake invocation is intentionally not wired in milestone 1; use --dry-run');
   }
 
-  const config = JSON.parse(await readFile(configPath, 'utf8'));
-  const usagePath = valueAfter(args, '--usage') ?? config.fixtureUsagePath;
+  const configFile = resolve(configPath);
+  const config = JSON.parse(await readFile(configFile, 'utf8'));
+  const usagePath = resolvePath(valueAfter(args, '--usage') ?? config.fixtureUsagePath, dirname(configFile));
   if (!usagePath) {
     throw new Error('missing --usage or config.fixtureUsagePath');
   }
@@ -34,6 +36,11 @@ async function main(argv) {
 function valueAfter(args, flag) {
   const index = args.indexOf(flag);
   return index === -1 ? null : args[index + 1];
+}
+
+function resolvePath(pathValue, baseDir) {
+  if (!pathValue) return null;
+  return isAbsolute(pathValue) ? pathValue : resolve(baseDir, pathValue);
 }
 
 function usageAndExit() {

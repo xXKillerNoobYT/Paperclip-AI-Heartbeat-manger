@@ -48,6 +48,7 @@ bin/
 src/
 ├── fairness.js                      # Weighted fair-turn participant selection
 ├── fixture-provider.js              # Fixture usage snapshot loader
+├── index.js                         # Public ESM exports for npm consumers
 ├── pacing.js                        # Session/weekly pacing gates
 ├── paperclip-client.js              # Paperclip API adapter scaffold
 ├── scheduler.js                     # Dry-run decision orchestration
@@ -68,12 +69,43 @@ The plugin reads and writes a shared JSON file that acts as the central decision
 
 ---
 
-## Usage
+## Installation and Usage
+
+From npm after the package is published:
+
+```bash
+npm install paperclip-ai-heartbeat-manager
+```
+
+For one-off checks without adding it to a project:
+
+```bash
+npx paperclip-ai-heartbeat-manager decide --dry-run --config ./heartbeat-manager.config.json
+```
+
+From a local checkout:
 
 ```bash
 npm test
 npm run decide
 ```
+
+From an installed package/tarball:
+
+```bash
+npm install paperclip-ai-heartbeat-manager
+npx paperclip-heartbeat-manager decide --dry-run \
+  --config ./node_modules/paperclip-ai-heartbeat-manager/examples/heartbeat-manager.config.json
+```
+
+The CLI resolves relative fixture paths from the config file location, so the packaged example config works after `npm install` from any consumer project directory.
+
+The package exposes both:
+
+- CLI binaries: `paperclip-ai-heartbeat-manager` and `paperclip-heartbeat-manager`
+- ESM API entrypoint: `import { decideDryRun, evaluatePacing, selectParticipant } from 'paperclip-ai-heartbeat-manager'`
+
+The published npm tarball intentionally includes `bin/`, `src/`, `examples/`, `docs/`, `README.md`, and `LICENSE`; it excludes local git/worktree artifacts.
 
 The example dry-run command prints a decision object with:
 
@@ -102,6 +134,9 @@ npm test
 
 # Run the fixture-backed dry-run scheduler
 npm run decide
+
+# Verify npm package contents before publishing
+npm run pack:check
 ```
 
 ---
