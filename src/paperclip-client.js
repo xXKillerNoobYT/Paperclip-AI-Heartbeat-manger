@@ -16,6 +16,47 @@ export class PaperclipClient {
     return issues.filter((issue) => ACTIONABLE_STATUSES.has(issue.status));
   }
 
+  async getProviderQuotaWindows(companyId) {
+    return this.getJson(`/companies/${companyId}/costs/quota-windows`);
+  }
+
+  async getQuotaWindows(companyId) {
+    return this.getProviderQuotaWindows(companyId);
+  }
+
+  async getIssue(identifier) {
+    return this.getJson(`/issues/${identifier}`);
+  }
+
+  async updateIssue(identifier, body) {
+    return this.patchJson(`/issues/${identifier}`, body);
+  }
+
+  async commentIssue(identifier, body) {
+    const payload = typeof body === 'string' ? { body } : body;
+    return this.postJson(`/issues/${identifier}/comments`, payload);
+  }
+
+  async getAgent(agentId) {
+    return this.getJson(`/agents/${agentId}`);
+  }
+
+  async updateAgent(agentId, body) {
+    return this.patchJson(`/agents/${agentId}`, body);
+  }
+
+  async getCompanyCostSummary(companyId) {
+    return this.getJson(`/companies/${companyId}/costs/summary`);
+  }
+
+  async getCompanyBudgetOverview(companyId) {
+    return this.getJson(`/companies/${companyId}/budgets/overview`);
+  }
+
+  async getBudgetOverview(companyId) {
+    return this.getCompanyBudgetOverview(companyId);
+  }
+
   async wakeAgent(agentId, body = {}) {
     if (this.dryRun) {
       return { dryRun: true, invoked: false, agentId, body };
@@ -29,6 +70,10 @@ export class PaperclipClient {
 
   async postJson(path, body) {
     return this.requestJson('POST', path, body);
+  }
+
+  async patchJson(path, body) {
+    return this.requestJson('PATCH', path, body);
   }
 
   async requestJson(method, path, body) {

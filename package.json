@@ -9,7 +9,9 @@
   },
   "scripts": {
     "test": "node --test",
-    "decide": "node ./bin/paperclip-heartbeat-manager.js decide --dry-run --config ./examples/heartbeat-manager.config.json"
+    "decide": "node ./bin/paperclip-heartbeat-manager.js decide --dry-run --config ./examples/heartbeat-manager.config.json",
+    "hold-plan": "node ./bin/paperclip-heartbeat-manager.js hold-plan --dry-run --config ./examples/heartbeat-manager.config.json --hold-snapshot ./examples/hold-snapshot.json",
+    "report": "node ./bin/paperclip-heartbeat-manager.js report --dry-run --config ./examples/heartbeat-manager.config.json --output ./reports/operator-dashboard.html"
   },
   "engines": {
     "node": ">=20"

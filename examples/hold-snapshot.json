@@ -1,0 +1,51 @@
+{
+  "companyId": "803d6ebd-cc2a-415f-8bbf-6a800fa36d20",
+  "trigger": {
+    "state": "hold",
+    "reason": "Example provider weekly usage hard stop reached",
+    "resetAt": "2026-06-16T00:00:00.000Z"
+  },
+  "issues": [
+    {
+      "id": "example-issue-1",
+      "identifier": "WEI-EXAMPLE-1",
+      "status": "todo",
+      "priority": "high",
+      "title": "Example future work that would be held"
+    },
+    {
+      "id": "example-issue-2",
+      "identifier": "WEI-EXAMPLE-2",
+      "status": "in_progress",
+      "priority": "critical",
+      "title": "Example running work that must continue",
+      "liveRunActive": true
+    }
+  ],
+  "agents": [
+    {
+      "id": "example-agent-idle",
+      "name": "Example Idle Agent",
+      "status": "idle",
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 7200,
+          "wakeOnDemand": true
+        }
+      }
+    },
+    {
+      "id": "example-agent-running",
+      "name": "Example Running Agent",
+      "status": "running",
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 7200,
+          "wakeOnDemand": true
+        }
+      }
+    }
+  ]
+}

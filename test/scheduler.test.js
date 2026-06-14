@@ -82,3 +82,51 @@ test('quota safety boundary holds when provider usage is above hard stop', () =>
   assert.equal(decision.type, 'hold');
   assert.match(decision.reason, /hard stop|over/i);
 });
+
+test('missing required company cost-limit telemetry holds instead of waking', () => {
+  const requireCostLimits = structuredClone(config);
+  requireCostLimits.pools[0].requireCompanyCostLimit = true;
+
+  const decision = decideDryRun({ config: requireCostLimits, usageSnapshots: [snapshot], now });
+
+  assert.equal(decision.type, 'hold');
+  assert.match(decision.reason, /no eligible participant/i);
+  assert.equal(decision.skipped[0].reason, 'missing company cost limit telemetry');
+});
+
+test('company budget hard stop removes participant from wake selection', () => {
+  const decision = decideDryRun({
+    config,
+    usageSnapshots: [snapshot],
+    costLimits: {
+      gov: { ok: true, companyId: 'gov', spendCents: 1000, budgetCents: 1000, activeIncidentCount: 0 },
+    },
+    now,
+  });
+
+  assert.equal(decision.type, 'hold');
+  assert.match(decision.reason, /no eligible participant/i);
+  assert.equal(decision.skipped[0].reason, 'company monthly budget hard stop blocks wake');
+});
+
+test('provider diagnostics match configured provider aliases before generic missing-telemetry hold', () => {
+  const claudeConfig = structuredClone(config);
+  claudeConfig.pools[0].provider = 'claude';
+
+  const decision = decideDryRun({
+    config: claudeConfig,
+    usageSnapshots: [],
+    sourceDiagnostics: [
+      {
+        source: 'paperclip_quota_windows',
+        ok: false,
+        provider: 'anthropic',
+        reason: 'quota polling failed',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(decision.type, 'hold');
+  assert.match(decision.reason, /provider telemetry unavailable for claude: quota polling failed/);
+});

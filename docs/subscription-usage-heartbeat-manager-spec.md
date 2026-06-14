@@ -83,6 +83,27 @@ The plugin may:
 - Temporarily qualify non-CEO key agents for plugin-triggered work when config says so and quota math allows it.
 - Adjust future plugin wake cadence based on quota state.
 - Record fairness and usage decisions in a shared state file.
+- Emit a dry-run hold/release plan for Paperclip issues and agent interval heartbeats when usage or budget state requires future work to pause.
+
+## 4.1 Hold-state policy surface and gated live execution
+
+The safe hold-state policy is documented in `docs/hold-state-policy.md` and implemented by `src/hold-plan.js`. Planning remains dry-run by default. Live execution is implemented separately in `src/live-executor.js` and is allowed only when the operator explicitly enables `config.live.enabled`, passes `--live`, and confirms the exact configured confirmation text.
+
+Required behavior:
+
+- Hold candidates are future actionable issues only: `todo`, `backlog`, and `in_progress`.
+- `done` and `cancelled` issues are excluded.
+- Already `blocked` issues are preserved so the planner does not overwrite real dependency chains.
+- Issues with `activeRecoveryAction` are preserved so stale adapter/recovery evidence remains visible.
+- Issues with active live work (`liveRunActive`, `currentRunId`, `executionRunId`, or non-empty `liveRuns`) are preserved.
+- Idle agents with enabled interval heartbeats may be proposed for `disable_interval_heartbeat`; running/busy/working agents are excluded.
+- Reset/release mode may resume only records tagged with `holdState.source === "heartbeat_manager_hold_plan"` and must leave unrelated blocked issues or disabled agents alone.
+- Every planning output must include `mode: "dry_run"`, `mutationsEnabled: false`, and `requiresOwnerApprovalForLiveMutation: true` so a plan cannot be mistaken for a mutation.
+- Live wake execution must re-read the selected agent immediately before invoking `/agents/{agentId}/heartbeat/invoke` and skip if the agent is running/busy/working or already has active live work.
+- Live hold/release execution must re-read each issue/agent immediately before mutation and skip any running issue, active run, or running agent.
+- Live execution must write a JSONL decision log and a JSON idempotency/fencing store. Reusing the same `decisionId` must return a duplicate result and perform no Paperclip mutation.
+- Live hold/release comments must include decision id, fencing token, reason, prior/restored status, and non-interruption evidence.
+- Emergency disable is `config.live.enabled=false` or running the CLI without `--live`; dry-run must remain the default.
 
 ## 5. Required Paperclip integration points
 
@@ -90,7 +111,11 @@ Implementation must use supported Paperclip surfaces where possible:
 
 1. Usage telemetry input
    - Read Paperclip's provider usage tracking if available.
-   - Required fields per provider/window:
+   - Current live source contract: `GET /api/companies/{companyId}/costs/quota-windows` returns adapter quota-window groups shaped like `{ provider, source, ok, error?, windows: [{ label, usedPercent, resetsAt, valueLabel?, detail? }] }`.
+   - Provider groups are mapped to configured pools by `pool.quotaProvider`, `pool.provider`, or `pool.providerSlug`.
+   - Window labels matching `session`, `current`, `6h`, or `5h` map to scheduler window `session_6h`; labels matching `weekly` map to scheduler window `weekly`.
+   - Provider groups with `ok: false`, missing required windows, null usage percentages, null reset times, or stale `collectedAt` must produce a safe hold, not a wake.
+   - Required normalized fields per provider/window:
      - provider key
      - account/subscription pool key
      - window kind
@@ -114,6 +139,8 @@ Implementation must use supported Paperclip surfaces where possible:
    - Company-level config controls initial GOV-only scope.
    - Provider-pool config maps provider accounts to shared state files.
    - Agent-level config declares whether an agent is qualified.
+   - Usage source config selects deterministic fixtures or live Paperclip telemetry: `{ "usageSource": { "type": "fixture|paperclip", "baseUrl": "http://localhost:3100/api", "companyIds": ["..."] } }`.
+   - Cost-limit input comes from `GET /costs/summary` and `GET /budgets/overview` per participant company. Active budget incidents and configured monthly budgets are hard stops. A zero-dollar monthly budget is monitoring-only unless `requireCompanyCostLimit` is set and telemetry is missing.
 
 ## 6. Configuration model
 

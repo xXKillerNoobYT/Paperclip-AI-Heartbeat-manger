@@ -60,6 +60,12 @@ export function selectParticipant(participants, context = {}) {
       skipped.push(skip(candidate, 'max_runs_per_day'));
       continue;
     }
+    if (candidate.costLimitStatus?.decision === 'hold') {
+      skipped.push(skip(candidate, candidate.costLimitStatus.reason ?? 'company_cost_limit_hold', {
+        costLimit: candidate.costLimitStatus.limit ?? null,
+      }));
+      continue;
+    }
     if (!hasActionableWork(candidate)) {
       skipped.push(skip(candidate, 'no_visible_work'));
       continue;
@@ -106,10 +112,11 @@ function rankSort(a, b) {
   return String(a.participantId).localeCompare(String(b.participantId));
 }
 
-function skip(candidate, reason) {
+function skip(candidate, reason, extra = {}) {
   return {
     participantId: candidate.participantId,
     reason,
+    ...extra,
   };
 }
 
