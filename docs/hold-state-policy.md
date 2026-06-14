@@ -55,7 +55,8 @@ Release mode resumes only state that the hold plan owns:
   3. Exact `--confirm-live` text matching `config.live.confirmationText`.
   4. A Paperclip API base URL.
   5. A JSON idempotency/fencing store so duplicate `decisionId` values cannot mutate twice.
-  6. A JSONL decision log path for reviewable operator evidence.
+  6. A short-lived local lock around the idempotency store so concurrent processes cannot both execute the same decision before either one marks it complete.
+  7. A JSONL decision log path for reviewable operator evidence; wake responses are compacted to run/status identifiers rather than full response bodies.
 - Before applying an issue hold or release, the live executor re-reads the issue and skips it if a live run or execution run is present.
 - Before disabling/restoring an agent heartbeat, the live executor re-reads the agent and skips it if the agent is running/busy/working.
 - Hold execution posts an issue comment explaining decision id, fencing token, prior status, reason, reset target, and non-interruption safety before changing status.
@@ -103,5 +104,5 @@ The test suite covers:
 - weekly/session reset release behavior for hold-plan-managed issues/agents only;
 - dry-run/no-mutation mode;
 - live fail-closed config/confirmation checks;
-- live duplicate-decision idempotency;
+- live duplicate-decision idempotency and concurrent duplicate fencing;
 - live wake, hold, release, API failure surface, and running-work preservation with mocked Paperclip API.

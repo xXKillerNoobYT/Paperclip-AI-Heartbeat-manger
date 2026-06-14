@@ -1,9 +1,10 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const DEFAULT_CONFIRMATION = 'I understand this mutates live Paperclip state';
 const RUNNING_AGENT_STATUSES = new Set(['running', 'busy', 'working', 'in_progress']);
 const ACTIVE_ISSUE_RUN_FIELDS = ['currentRunId', 'executionRunId', 'checkoutRunId'];
+const IDEMPOTENCY_LOCK_STALE_MS = 5 * 60 * 1000;
 
 export async function executeLiveDecision({
   decision,
@@ -19,6 +20,31 @@ export async function executeLiveDecision({
   assertDurableLivePaths({ decisionLogPath, idempotencyPath });
   if (!client) throw new Error('executeLiveDecision requires a Paperclip client');
 
+  const lock = await acquireIdempotencyLock(idempotencyPath, now);
+  try {
+    return await executeLiveDecisionWithLock({
+      decision,
+      holdPlan,
+      client,
+      config,
+      now,
+      decisionLogPath,
+      idempotencyPath,
+    });
+  } finally {
+    await releaseIdempotencyLock(lock);
+  }
+}
+
+async function executeLiveDecisionWithLock({
+  decision,
+  holdPlan = null,
+  client,
+  config = {},
+  now = new Date().toISOString(),
+  decisionLogPath,
+  idempotencyPath,
+} = {}) {
   const idempotency = await readIdempotencyStore(idempotencyPath);
   const decisionId = liveDecisionId(decision, holdPlan, now);
   if (idempotency.decisions[decisionId]?.completed === true) {
@@ -119,7 +145,7 @@ async function executeWakeDecision({ decision, client, config, now, decisionId, 
     createdAt: now,
     mode: 'live',
     invoked: true,
-    actions: [{ action: 'wake_agent', agentId: decision.agentId, companyId: decision.companyId, response }],
+    actions: [{ action: 'wake_agent', agentId: decision.agentId, companyId: decision.companyId, response: compactWakeResponse(response) }],
     skipped: [],
   };
 }
@@ -246,7 +272,47 @@ async function readIdempotencyStore(idempotencyPath) {
 
 async function writeIdempotencyStore(idempotencyPath, store) {
   await mkdir(path.dirname(idempotencyPath), { recursive: true });
-  await writeFile(idempotencyPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  const tempPath = `${idempotencyPath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  await rename(tempPath, idempotencyPath);
+}
+
+async function acquireIdempotencyLock(idempotencyPath, now) {
+  if (!idempotencyPath) return null;
+  const lockPath = `${idempotencyPath}.lock`;
+  await mkdir(path.dirname(idempotencyPath), { recursive: true });
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      await mkdir(lockPath);
+      await writeFile(path.join(lockPath, 'owner.json'), `${JSON.stringify({ pid: process.pid, acquiredAt: now })}\n`, 'utf8');
+      return { lockPath };
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      await removeStaleLock(lockPath);
+      await sleep(20);
+    }
+  }
+  throw new Error(`timed out waiting for live decision idempotency lock: ${lockPath}`);
+}
+
+async function removeStaleLock(lockPath) {
+  try {
+    const info = await stat(lockPath);
+    if (Date.now() - info.mtimeMs > IDEMPOTENCY_LOCK_STALE_MS) {
+      await rm(lockPath, { recursive: true, force: true });
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
+async function releaseIdempotencyLock(lock) {
+  if (!lock) return;
+  await rm(lock.lockPath, { recursive: true, force: true });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function compactIssue(issue) {
@@ -255,6 +321,16 @@ function compactIssue(issue) {
 
 function compactAgent(agent) {
   return agent ? { id: agent.id, name: agent.name, status: agent.status, heartbeat: agent.runtimeConfig?.heartbeat ?? null } : null;
+}
+
+function compactWakeResponse(response) {
+  if (!response || typeof response !== 'object') return response ?? null;
+  return {
+    queued: response.queued ?? response.ok ?? null,
+    runId: response.runId ?? response.heartbeatRunId ?? response.id ?? null,
+    status: response.status ?? null,
+    agentId: response.agentId ?? null,
+  };
 }
 
 function summarizeResult(result) {

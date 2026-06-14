@@ -182,6 +182,43 @@ test('live hold plan patches issues/agents, writes comments, records idempotency
   }
 });
 
+test('concurrent live wake decisions fence the same decision id to one Paperclip mutation', async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), 'heartbeat-live-concurrent-'));
+  try {
+    const idempotencyPath = path.join(tmp, 'idempotency.json');
+    const decisionLogPath = path.join(tmp, 'decisions.jsonl');
+    const client = new MockPaperclipClient({
+      agents: {
+        'agent-1': { id: 'agent-1', name: 'CEO', status: 'idle', runtimeConfig: { heartbeat: { enabled: false } } },
+      },
+      delayMethods: new Set(['wakeAgent']),
+    });
+    const decision = {
+      decisionId: 'concurrent-decision-1',
+      type: 'wake',
+      reason: 'quota has room',
+      agentId: 'agent-1',
+      companyId: 'company-1',
+      providerPoolId: 'pool-1',
+      selectedParticipantId: 'participant-1',
+    };
+
+    const results = await Promise.all([
+      executeLiveDecision({ decision, client, config, confirmation: 'APPROVE LIVE TEST', now, idempotencyPath, decisionLogPath }),
+      executeLiveDecision({ decision, client, config, confirmation: 'APPROVE LIVE TEST', now, idempotencyPath, decisionLogPath }),
+    ]);
+
+    assert.equal(results.filter((result) => result.invoked).length, 1);
+    assert.equal(results.filter((result) => result.duplicate).length, 1);
+    assert.equal(client.calls.filter((call) => call.method === 'wakeAgent').length, 1);
+    assert.ok(results.find((result) => result.invoked).actions[0].response);
+    const logLines = (await readFile(decisionLogPath, 'utf8')).trim().split('\n');
+    assert.equal(logLines.length, 2);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test('live release plan restores only planned issue status and heartbeat settings', async () => {
   await withLivePaths('heartbeat-live-release-', async ({ idempotencyPath, decisionLogPath }) => {
     const client = new MockPaperclipClient({
@@ -311,10 +348,11 @@ test('live mode requires durable decision log path before Paperclip mutation', a
 });
 
 class MockPaperclipClient {
-  constructor({ issues = {}, agents = {}, failMethods = new Set() } = {}) {
+  constructor({ issues = {}, agents = {}, failMethods = new Set(), delayMethods = new Set() } = {}) {
     this.issues = structuredClone(issues);
     this.agents = structuredClone(agents);
     this.failMethods = failMethods;
+    this.delayMethods = delayMethods;
     this.comments = {};
     this.calls = [];
   }
@@ -350,7 +388,12 @@ class MockPaperclipClient {
   }
 
   async wakeAgent(agentId, body) {
+    if (this.delayMethods.has('wakeAgent')) await sleep(50);
     this.calls.push({ method: 'wakeAgent', agentId, body });
     return { queued: true, runId: 'run-1', agentId, body };
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
