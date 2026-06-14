@@ -11,6 +11,18 @@ export class PaperclipClient {
     this.fetchImpl = fetchImpl ?? globalThis.fetch;
   }
 
+  async getCompany(companyId) {
+    return this.getJson(`/companies/${companyId}`);
+  }
+
+  async listCompanyAgents(companyId) {
+    return this.getJson(`/companies/${companyId}/agents`);
+  }
+
+  async listCompanyIssues(companyId, { limit = 500, offset = 0 } = {}) {
+    return this.getJson(`/companies/${companyId}/issues?limit=${limit}&offset=${offset}`);
+  }
+
   async listAssignedActionableIssues(companyId, agentId) {
     const issues = await this.getJson(`/companies/${companyId}/issues?assigneeAgentId=${agentId}`);
     return issues.filter((issue) => ACTIONABLE_STATUSES.has(issue.status));
@@ -22,6 +34,27 @@ export class PaperclipClient {
 
   async getQuotaWindows(companyId) {
     return this.getProviderQuotaWindows(companyId);
+  }
+
+  async getProviderCosts(companyId, range = {}) {
+    const search = new URLSearchParams();
+    if (range.from) search.set('from', range.from);
+    if (range.to) search.set('to', range.to);
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return this.getJson(`/companies/${companyId}/costs/by-provider${suffix}`);
+  }
+
+  async getWindowSpend(companyId) {
+    return this.getJson(`/companies/${companyId}/costs/window-spend`);
+  }
+
+  async getCostsByAgentModel(companyId, { from, to } = {}) {
+    if (!companyId) throw new Error('getCostsByAgentModel requires companyId');
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const query = params.toString();
+    return this.getJson(`/companies/${companyId}/costs/by-agent-model${query ? `?${query}` : ''}`);
   }
 
   async getIssue(identifier) {

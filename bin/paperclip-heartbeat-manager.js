@@ -2,12 +2,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 
+import { buildHoldPlan } from '../src/hold-plan.js';
+import { executeLiveDecision } from '../src/live-executor.js';
+import { buildOperatorReport, renderOperatorDashboardHtml } from '../src/operator-report.js';
+import { PaperclipClient } from '../src/paperclip-client.js';
+import { discoverPaperclipParticipants } from '../src/paperclip-discovery.js';
 import { decideDryRun } from '../src/scheduler.js';
 import { readUsageInputs } from '../src/usage-provider.js';
-import { buildOperatorReport, renderOperatorDashboardHtml } from '../src/operator-report.js';
-import { buildHoldPlan } from '../src/hold-plan.js';
-import { PaperclipClient } from '../src/paperclip-client.js';
-import { executeLiveDecision } from '../src/live-executor.js';
 
 async function main(argv) {
   const [command, ...args] = argv;
@@ -31,20 +32,24 @@ async function main(argv) {
   const configFile = resolve(configPath);
   const configDir = dirname(configFile);
   const config = JSON.parse(await readFile(configFile, 'utf8'));
-  const sourceType = valueAfter(args, '--usage-source');
-  const paperclipBaseUrl = valueAfter(args, '--paperclip-base-url');
-  if (sourceType || paperclipBaseUrl) {
-    config.usageSource = {
-      ...(config.usageSource ?? {}),
-      ...(sourceType ? { type: sourceType } : {}),
-      ...(paperclipBaseUrl ? { baseUrl: paperclipBaseUrl } : {}),
-    };
+  config.usageSource = usageSourceFrom(args, config);
+  const baseUrl = valueAfter(args, '--paperclip-base-url');
+  if (baseUrl) {
+    config.paperclip = { ...(config.paperclip ?? {}), baseUrl };
   }
-  const usagePath = resolvePath(valueAfter(args, '--usage') ?? config.fixtureUsagePath ?? config.usageSource?.fixtureUsagePath, configDir);
-  if ((config.usageSource?.type ?? 'fixture') !== 'paperclip' && !usagePath) {
+
+  const usagePath = resolvePath(
+    valueAfter(args, '--usage') ?? config.fixtureUsagePath ?? config.usageSource.fixtureUsagePath,
+    configDir,
+  );
+  if (config.usageSource.type !== 'paperclip' && !usagePath) {
     throw new Error('missing --usage or config.fixtureUsagePath');
   }
+
   const now = valueAfter(args, '--now') ?? config.now ?? new Date().toISOString();
+  const paperclipClient = makePaperclipClient({ args, config, dryRun });
+  const participants = await loadParticipants({ args, config, now, paperclipClient });
+  const configWithParticipants = { ...config, participants };
 
   if (command === 'hold-plan') {
     const snapshotPath = resolvePath(valueAfter(args, '--hold-snapshot'), process.cwd());
@@ -76,8 +81,8 @@ async function main(argv) {
     return;
   }
 
-  const { usageSnapshots, costLimits, sourceDiagnostics } = await readUsageInputs(config, { usagePath, now });
-  const decision = decideDryRun({ config, usageSnapshots, costLimits, sourceDiagnostics, now });
+  const { usageSnapshots, costLimits, sourceDiagnostics } = await readUsageInputs(configWithParticipants, { usagePath, now });
+  const decision = decideDryRun({ config: configWithParticipants, usageSnapshots, costLimits, sourceDiagnostics, now });
 
   if (command === 'decide') {
     if (live) {
@@ -97,7 +102,13 @@ async function main(argv) {
     return;
   }
 
-  const report = buildOperatorReport({ config, usageSnapshots, decisions: [decision], sourceDiagnostics, now });
+  const report = buildOperatorReport({
+    config: configWithParticipants,
+    usageSnapshots,
+    decisions: [decision],
+    sourceDiagnostics,
+    now,
+  });
   const format = valueAfter(args, '--format') ?? 'html';
   const outputPath = valueAfter(args, '--output');
   const body = format === 'json'
@@ -120,11 +131,78 @@ function valueAfter(args, flag) {
 }
 
 function requiredPaperclipBaseUrl(config, args) {
-  const baseUrl = valueAfter(args, '--paperclip-base-url') ?? config.usageSource?.baseUrl ?? config.live?.paperclipBaseUrl;
+  const baseUrl = paperclipBaseUrl(args, config);
   if (!baseUrl) {
     throw new Error('live mode requires --paperclip-base-url or config.live.paperclipBaseUrl');
   }
   return baseUrl;
+}
+
+function usageSourceFrom(args, config) {
+  const configured = normalizeUsageSource(config.usageSource);
+  const sourceType = valueAfter(args, '--usage-source');
+  const baseUrl = valueAfter(args, '--paperclip-base-url');
+  return {
+    ...configured,
+    ...(sourceType ? { type: sourceType } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+  };
+}
+
+function normalizeUsageSource(source) {
+  if (typeof source === 'string') return { type: source };
+  if (source && typeof source === 'object') return { ...source };
+  return { type: 'fixture' };
+}
+
+function paperclipBaseUrl(args, config) {
+  return valueAfter(args, '--paperclip-base-url')
+    ?? process.env.PAPERCLIP_API_BASE_URL
+    ?? config.paperclip?.baseUrl
+    ?? config.usageSource?.baseUrl
+    ?? config.live?.paperclipBaseUrl
+    ?? config.paperclipBaseUrl;
+}
+
+function participantSource(args, config) {
+  if (args.includes('--discover-paperclip-participants')) return 'paperclip';
+  return valueAfter(args, '--participants-source')
+    ?? config.participantsSource
+    ?? config.paperclip?.participantsSource
+    ?? (config.paperclip?.participants?.enabled ? 'paperclip' : 'config');
+}
+
+function makePaperclipClient({ args, config, dryRun }) {
+  const needsPaperclip = config.usageSource.type === 'paperclip' || participantSource(args, config) === 'paperclip';
+  if (!needsPaperclip) return null;
+
+  const baseUrl = paperclipBaseUrl(args, config);
+  if (!baseUrl) throw new Error('missing Paperclip baseUrl');
+  return new PaperclipClient({ baseUrl, dryRun });
+}
+
+async function loadParticipants({ args, config, now, paperclipClient }) {
+  const participantsSource = participantSource(args, config);
+  if (participantsSource === 'config') return config.participants ?? [];
+  if (participantsSource !== 'paperclip') throw new Error(`unsupported participantsSource: ${participantsSource}`);
+
+  const source = config.paperclip?.participants ?? {};
+  const companyIds = parseList(
+    valueAfter(args, '--company-id')
+      ?? source.companyIds
+      ?? config.paperclip?.companyIds
+      ?? config.paperclip?.companyId,
+  );
+  const providerPoolId = valueAfter(args, '--provider-pool-id') ?? source.providerPoolId ?? config.pools?.[0]?.poolId;
+  return discoverPaperclipParticipants({
+    client: paperclipClient,
+    companyIds,
+    providerPoolId,
+    issueLimit: source.issueLimit ?? 500,
+    defaultMaxRunsPerDay: source.defaultMaxRunsPerDay ?? 12,
+    defaultCooldownSec: source.defaultCooldownSec ?? 900,
+    now,
+  });
 }
 
 function resolvePath(pathValue, baseDir) {
@@ -132,8 +210,14 @@ function resolvePath(pathValue, baseDir) {
   return isAbsolute(pathValue) ? pathValue : resolve(baseDir, pathValue);
 }
 
+function parseList(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+}
+
 function usageAndExit() {
-  process.stderr.write('Usage: paperclip-heartbeat-manager <decide|report|hold-plan> --config <file> (--dry-run|--live --confirm-live <text>) [--usage <fixture>] [--usage-source fixture|paperclip] [--paperclip-base-url <api>] [--hold-snapshot <file>] [--now <iso>] [--output <file>] [--format html|json] [--decision-log <jsonl>] [--idempotency-store <json>]\n');
+  process.stderr.write('Usage: paperclip-heartbeat-manager <decide|report|hold-plan> --config <file> (--dry-run|--live --confirm-live <text>) [--usage <fixture>] [--usage-source fixture|paperclip] [--participants-source config|paperclip|--discover-paperclip-participants] [--paperclip-base-url <api>] [--company-id <uuid[,uuid]>] [--provider-pool-id <id>] [--hold-snapshot <file>] [--now <iso>] [--output <file>] [--format html|json] [--decision-log <jsonl>] [--idempotency-store <json>]\n');
   process.exit(2);
 }
 

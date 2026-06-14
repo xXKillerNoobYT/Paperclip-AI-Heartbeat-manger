@@ -6,6 +6,11 @@
     "type": "fixture",
     "fixtureUsagePath": "./usage-snapshot.json"
   },
+  "paperclip": {
+    "baseUrl": "http://localhost:3100/api",
+    "companyId": "803d6ebd-cc2a-415f-8bbf-6a800fa36d20",
+    "participantsSource": "config"
+  },
   "live": {
     "enabled": false,
     "confirmationText": "I understand this mutates live Paperclip state",

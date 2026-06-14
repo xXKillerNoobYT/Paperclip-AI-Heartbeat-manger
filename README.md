@@ -35,6 +35,8 @@ Paperclip agents run autonomously, but visibility into whether they're alive, st
 - Final-day ramp toward `hardStopAtPct` without crossing hard stops.
 - Weighted deficit fairness selector with cooldown, offline, visible-work, qualification, and deterministic tie-break rules.
 - Paperclip client adapter for issue discovery, agent reads, wake invocation, comments, and guarded live mutations.
+- Paperclip Costs integration that can read quota windows or by-agent/model spend from the board and feed the scheduler without separate fixture files.
+- Paperclip participant discovery that reads live company agents plus assigned actionable issues so the scheduler can use existing board state instead of hand-maintained participant lists.
 - Fixture usage provider and live Paperclip usage/cost-limit adapter contract for dry-run decisions.
 - Dry-run hold-state policy planner plus explicit opt-in live wake/hold/resume executor with idempotency and JSONL decision logs.
 - Unit tests for pacing, fairness, shared-state recovery, and scheduler dry-run behavior.
