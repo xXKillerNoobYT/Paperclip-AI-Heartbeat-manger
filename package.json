@@ -4,24 +4,68 @@
   "description": "Dry-run heartbeat manager for pacing Paperclip agent wakes against provider subscription usage windows.",
   "type": "module",
   "private": false,
-  "bin": {
-    "paperclip-heartbeat-manager": "./bin/paperclip-heartbeat-manager.js"
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./scheduler": "./src/scheduler.js",
+    "./pacing": "./src/pacing.js",
+    "./fairness": "./src/fairness.js",
+    "./shared-state": "./src/shared-state.js",
+    "./paperclip-client": "./src/paperclip-client.js",
+    "./hold-plan": "./src/hold-plan.js",
+    "./live-executor": "./src/live-executor.js",
+    "./operator-report": "./src/operator-report.js",
+    "./usage-provider": "./src/usage-provider.js",
+    "./package.json": "./package.json"
   },
+  "bin": {
+    "paperclip-ai-heartbeat-manager": "bin/paperclip-heartbeat-manager.js",
+    "paperclip-heartbeat-manager": "bin/paperclip-heartbeat-manager.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "docs/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "node --test",
     "decide": "node ./bin/paperclip-heartbeat-manager.js decide --dry-run --config ./examples/heartbeat-manager.config.json",
     "hold-plan": "node ./bin/paperclip-heartbeat-manager.js hold-plan --dry-run --config ./examples/heartbeat-manager.config.json --hold-snapshot ./examples/hold-snapshot.json",
-    "report": "node ./bin/paperclip-heartbeat-manager.js report --dry-run --config ./examples/heartbeat-manager.config.json --output ./reports/operator-dashboard.html"
+    "report": "node ./bin/paperclip-heartbeat-manager.js report --dry-run --config ./examples/heartbeat-manager.config.json --output ./reports/operator-dashboard.html",
+    "pack:check": "npm pack --dry-run"
   },
   "engines": {
     "node": ">=20"
   },
   "keywords": [
     "paperclip",
+    "paperclip-ai",
+    "paperclip-plugin",
     "heartbeat",
     "scheduler",
     "quota",
+    "subscription-usage",
     "dry-run"
   ],
-  "license": "GPL-3.0"
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xXKillerNoobYT/Paperclip-AI-Heartbeat-manger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xXKillerNoobYT/Paperclip-AI-Heartbeat-manger/issues"
+  },
+  "homepage": "https://github.com/xXKillerNoobYT/Paperclip-AI-Heartbeat-manger#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "test"
+  },
+  "author": ""
 }

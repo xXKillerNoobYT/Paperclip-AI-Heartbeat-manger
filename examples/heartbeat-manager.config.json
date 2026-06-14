@@ -1,10 +1,10 @@
 {
   "enabled": true,
   "now": "2026-06-15T12:00:00.000Z",
-  "fixtureUsagePath": "./examples/usage-snapshot.json",
+  "fixtureUsagePath": "./usage-snapshot.json",
   "usageSource": {
     "type": "fixture",
-    "fixtureUsagePath": "./examples/usage-snapshot.json"
+    "fixtureUsagePath": "./usage-snapshot.json"
   },
   "live": {
     "enabled": false,

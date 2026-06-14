@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 
 import { decideDryRun } from '../src/scheduler.js';
 import { readUsageInputs } from '../src/usage-provider.js';
@@ -28,8 +28,9 @@ async function main(argv) {
     throw new Error('choose --dry-run or explicit --live');
   }
 
-  const config = JSON.parse(await readFile(configPath, 'utf8'));
-  const usagePath = valueAfter(args, '--usage');
+  const configFile = resolve(configPath);
+  const configDir = dirname(configFile);
+  const config = JSON.parse(await readFile(configFile, 'utf8'));
   const sourceType = valueAfter(args, '--usage-source');
   const paperclipBaseUrl = valueAfter(args, '--paperclip-base-url');
   if (sourceType || paperclipBaseUrl) {
@@ -39,9 +40,14 @@ async function main(argv) {
       ...(paperclipBaseUrl ? { baseUrl: paperclipBaseUrl } : {}),
     };
   }
+  const usagePath = resolvePath(valueAfter(args, '--usage') ?? config.fixtureUsagePath ?? config.usageSource?.fixtureUsagePath, configDir);
+  if ((config.usageSource?.type ?? 'fixture') !== 'paperclip' && !usagePath) {
+    throw new Error('missing --usage or config.fixtureUsagePath');
+  }
   const now = valueAfter(args, '--now') ?? config.now ?? new Date().toISOString();
+
   if (command === 'hold-plan') {
-    const snapshotPath = valueAfter(args, '--hold-snapshot');
+    const snapshotPath = resolvePath(valueAfter(args, '--hold-snapshot'), process.cwd());
     if (!snapshotPath) {
       throw new Error('hold-plan requires --hold-snapshot <file>');
     }
@@ -69,9 +75,10 @@ async function main(argv) {
     process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
     return;
   }
-  const { usageSnapshots, costLimits, sourceDiagnostics } = await readUsageInputs(config, { usagePath, now });
 
+  const { usageSnapshots, costLimits, sourceDiagnostics } = await readUsageInputs(config, { usagePath, now });
   const decision = decideDryRun({ config, usageSnapshots, costLimits, sourceDiagnostics, now });
+
   if (command === 'decide') {
     if (live) {
       const result = await executeLiveDecision({
@@ -118,6 +125,11 @@ function requiredPaperclipBaseUrl(config, args) {
     throw new Error('live mode requires --paperclip-base-url or config.live.paperclipBaseUrl');
   }
   return baseUrl;
+}
+
+function resolvePath(pathValue, baseDir) {
+  if (!pathValue) return null;
+  return isAbsolute(pathValue) ? pathValue : resolve(baseDir, pathValue);
 }
 
 function usageAndExit() {
