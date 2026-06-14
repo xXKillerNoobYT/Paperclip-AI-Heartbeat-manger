@@ -1,0 +1,25 @@
+{
+  "name": "paperclip-ai-heartbeat-manager",
+  "version": "0.1.0",
+  "description": "Dry-run heartbeat manager for pacing Paperclip agent wakes against provider subscription usage windows.",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "paperclip-heartbeat-manager": "./bin/paperclip-heartbeat-manager.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "decide": "node ./bin/paperclip-heartbeat-manager.js decide --dry-run --config ./examples/heartbeat-manager.config.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "paperclip",
+    "heartbeat",
+    "scheduler",
+    "quota",
+    "dry-run"
+  ],
+  "license": "GPL-3.0"
+}

@@ -1,0 +1,40 @@
+{
+  "enabled": true,
+  "now": "2026-06-15T12:00:00.000Z",
+  "fixtureUsagePath": "./examples/usage-snapshot.json",
+  "pools": [
+    {
+      "poolId": "claude-main-isaac",
+      "provider": "claude",
+      "finalDayHours": 24,
+      "preFinalWeeklyUnderburnPct": 5,
+      "hardStopAtPct": 98,
+      "sessionHardStopPct": 90,
+      "staleTelemetryMaxAgeSec": 300,
+      "estimatedWakeCostPct": 2
+    }
+  ],
+  "participants": [
+    {
+      "participantId": "gov-ceo-claude",
+      "companyId": "bcac096e-4aff-4ce3-ad33-c4e0b693b36f",
+      "agentId": "replace-with-gov-ceo-agent-id",
+      "providerPoolId": "claude-main-isaac",
+      "role": "CEO",
+      "qualified": true,
+      "qualificationReason": "Initial GOV-only dry-run CEO participant approved by plugin config.",
+      "weight": 1,
+      "minCooldownSec": 900,
+      "maxRunsPerDay": 12,
+      "hasVisibleWork": true,
+      "turnsExpected": 1,
+      "turnsActual": 0,
+      "maxDeficitCarry": 3,
+      "runCountWindow": {
+        "session_6h": 0,
+        "daily": 0,
+        "weekly": 0
+      }
+    }
+  ]
+}
