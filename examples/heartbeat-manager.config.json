@@ -2,6 +2,19 @@
   "enabled": true,
   "now": "2026-06-15T12:00:00.000Z",
   "fixtureUsagePath": "./usage-snapshot.json",
+  "usageSource": {
+    "type": "fixture",
+    "fixtureUsagePath": "./usage-snapshot.json"
+  },
+  "live": {
+    "enabled": false,
+    "confirmationText": "I understand this mutates live Paperclip state",
+    "paperclipBaseUrl": "http://localhost:3100/api",
+    "decisionLogPath": "./logs/heartbeat-manager-decisions.jsonl",
+    "idempotencyStorePath": "./logs/heartbeat-manager-idempotency.json",
+    "forceFreshSession": true,
+    "reasonPrefix": "Heartbeat manager live mode"
+  },
   "pools": [
     {
       "poolId": "claude-main-isaac",

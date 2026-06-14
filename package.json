@@ -12,6 +12,10 @@
     "./fairness": "./src/fairness.js",
     "./shared-state": "./src/shared-state.js",
     "./paperclip-client": "./src/paperclip-client.js",
+    "./hold-plan": "./src/hold-plan.js",
+    "./live-executor": "./src/live-executor.js",
+    "./operator-report": "./src/operator-report.js",
+    "./usage-provider": "./src/usage-provider.js",
     "./package.json": "./package.json"
   },
   "bin": {
@@ -29,6 +33,8 @@
   "scripts": {
     "test": "node --test",
     "decide": "node ./bin/paperclip-heartbeat-manager.js decide --dry-run --config ./examples/heartbeat-manager.config.json",
+    "hold-plan": "node ./bin/paperclip-heartbeat-manager.js hold-plan --dry-run --config ./examples/heartbeat-manager.config.json --hold-snapshot ./examples/hold-snapshot.json",
+    "report": "node ./bin/paperclip-heartbeat-manager.js report --dry-run --config ./examples/heartbeat-manager.config.json --output ./reports/operator-dashboard.html",
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
