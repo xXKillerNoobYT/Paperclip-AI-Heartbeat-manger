@@ -2,176 +2,133 @@
 
 > **Give yourself real control over your agents' heartbeats on Paperclip.**
 
-A Paperclip plugin that monitors, tracks, and manages the heartbeat signals of your CEO, CTO, and key agents — so you always know what's running, what's stalled, and what's dead.
+A Paperclip plugin/CLI that monitors and manages qualified agent heartbeat decisions while pacing shared provider subscription usage windows. Milestone 1 is dry-run only: it calculates decisions and writes shared state, but it does not trigger real Paperclip heartbeats.
 
----
-
-## What It Does
-
-Paperclip agents run autonomously, but visibility into whether they're actually alive and doing useful work is limited. This plugin fills that gap:
-
-- 📡 **Tracks heartbeat signals** from all enabled agents in real time
-- 🧠 **Shared state file** — agents read/write a central decision output so you can see what's happening
-- ⚠️ **Detects stalls and loops** — flags agents that haven't produced output within a configurable window
-- 📊 **Dashboard surface** — exposes heartbeat status directly inside your Paperclip UI
-- 🔌 **Subscription-usage aware** — integrates with cost/usage math so you're not flying blind on Claude credits
+Issue context:
+- Parent request: WEI-3602
+- Spec issue: WEI-3605
+- Implementation issue: WEI-3606
 
 ---
 
 ## Why This Exists
 
-When you have 15+ agents running across multiple projects (WPR2, Government Watchdog, Mythos Writer, etc.), it's easy to miss when a key agent like the CEO or CTO has gone silent. This plugin makes that visible before it becomes a problem.
+When you have 15+ agents running across multiple projects or companies, it is easy to miss when a key agent like the CEO or CTO has gone silent, or to burn too much subscription capacity too early in the week.
+
+This project is intended to make that visible and controllable before it becomes a problem:
+
+- 📡 Track heartbeat decisions for enabled agents.
+- 🧠 Use a synced shared state file as the central decision bus.
+- 📊 Pace provider subscription usage across 6-hour and weekly windows.
+- ⚖️ Rotate qualified agents fairly across companies/computers sharing a subscription.
+- 🔒 Start with dry-run/no-wake behavior until safety and ops review approves live invocation.
+
+---
+
+## What is implemented
+
+- Shared synced-state JSON read/write with atomic replacement and bounded decision log.
+- Lease-style lock acquisition/release with fencing token and stale lock recovery.
+- Corrupt shared-state backup helper that returns safe hold.
+- 6-hour session and weekly pacing math.
+- Weekly pre-final-day `optimal - 5%` under-burn ceiling.
+- Final-day ramp toward `hardStopAtPct` without crossing hard stops.
+- Weighted deficit fairness selector with cooldown, offline, visible-work, qualification, and deterministic tie-break rules.
+- Paperclip client adapter scaffold for issue discovery and dry-run wake invocation guard.
+- Fixture usage provider and CLI dry-run command.
+- Unit tests for pacing, fairness, shared-state recovery, and scheduler dry-run behavior.
 
 ---
 
 ## Architecture
 
-```
-plugin/
+```text
+.
+├── bin/
+│   └── paperclip-heartbeat-manager.js   # CLI entrypoint
+├── docs/
+│   └── subscription-usage-heartbeat-manager-spec.md
+├── examples/
+│   ├── heartbeat-manager.config.json
+│   └── usage-snapshot.json
 ├── src/
-│   ├── manifest.ts        # Capabilities declaration
-│   ├── worker.ts          # Heartbeat polling & state logic
-│   └── ui/
-│       └── index.tsx      # Dashboard UI surface
-├── shared/
-│   └── state.json         # Shared reader/writer for agent decision output
-├── tests/
-│   └── plugin.spec.ts
+│   ├── fairness.js                      # weighted deficit/fair rotation
+│   ├── fixture-provider.js              # fixture usage snapshots
+│   ├── pacing.js                        # 6-hour + weekly usage math
+│   ├── paperclip-client.js              # Paperclip API adapter scaffold
+│   ├── scheduler.js                     # dry-run decision orchestration
+│   └── shared-state.js                  # atomic synced-state + locking
+├── test/
+│   ├── fairness.test.js
+│   ├── pacing.test.js
+│   ├── scheduler.test.js
+│   └── shared-state.test.js
 └── package.json
 ```
 
 ### Shared State File
 
-The plugin reads and writes a shared `state.json` that acts as the central decision bus:
-
-```json
-{
-  "agents": {
-    "CEO": {
-      "lastHeartbeat": "2026-06-14T20:45:00Z",
-      "status": "active",
-      "lastDecision": "Triaging WEI-3444 plan update",
-      "runCount": 3
-    },
-    "CTO": {
-      "lastHeartbeat": "2026-06-14T19:30:00Z",
-      "status": "stalled",
-      "lastDecision": "Waiting on WEI-3341 capacity confirmation",
-      "runCount": 1
-    }
-  },
-  "updatedAt": "2026-06-14T21:00:00Z"
-}
-```
+The manager reads and writes a shared JSON state file that can live in a synced folder shared by multiple machines. It records the current lock, recent decisions, and participant deficits so agents can take turns across companies/computers.
 
 ---
 
 ## Installation
 
-> **Requires:** Paperclip (self-hosted or cloud), Node.js 18+, pnpm
-
-### From local path (development)
+> **Requires:** Node.js 20+.
 
 ```bash
 git clone https://github.com/xXKillerNoobYT/Paperclip-AI-Heartbeat-manger.git
 cd Paperclip-AI-Heartbeat-manger
-pnpm install
-pnpm build
+npm test
 ```
 
-Install into Paperclip using an absolute local path via your Paperclip instance's plugin settings.
-
-### From npm (coming soon)
-
-```bash
-# Not yet published — watch this repo for the npm release
-```
-
----
-
-## Configuration
-
-After installing the plugin, configure it from the Paperclip plugin settings panel:
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `heartbeatIntervalMs` | `60000` | How often to poll for heartbeat updates (ms) |
-| `staleThresholdMs` | `300000` | Time before an agent is marked "stalled" (5 min) |
-| `trackedAgents` | `["CEO", "CTO"]` | Which agents to monitor |
-| `localStatePath` | `./shared/state.json` | Path to shared state file |
-| `localhostPort` | `3100` | Local API port for heartbeat calls |
+This package has no runtime npm dependencies in the first dry-run milestone.
 
 ---
 
 ## Usage
 
-Once installed, the plugin surfaces a **Heartbeat** panel in your Paperclip dashboard. From there you can:
+```bash
+npm test
+npm run decide
+```
 
-- See live status of all tracked agents (`active` / `stalled` / `dead`)
-- View the last decision each agent made
-- Manually trigger a heartbeat check
-- View subscription-usage cost stats per agent run
+The example dry-run command prints a decision object with:
+- provider pool
+- selected participant
+- weekly/session usage snapshot
+- weekly mode
+- fairness ranking
+- skipped candidates
+- expected cost
+- `invoked: false`
 
 ---
 
-## Subscription Usage & Cost Tracking
+## Safety boundary
 
-This plugin integrates with the WEI-3605 subscription-usage math model to track:
-
-- **Cost per agent run** (Claude credits consumed)
-- **Run frequency** vs. configured budget window
-- **Weekly credit projection** based on current run patterns
-
-Pairs with [Paperclip](https://paperclip.ai) and your existing cost-tracking setup.
-
----
-
-## Development
-
-```bash
-# Install deps
-pnpm install
-
-# Type check
-pnpm typecheck
-
-# Run tests
-pnpm test
-
-# Build
-pnpm build
-```
-
-### Running locally with localhost API
-
-The plugin can call a local API on port `3100` for heartbeat data. Start your local Paperclip server first:
-
-```bash
-# From your Paperclip repo
-pnpm dev
-```
-
-Then the plugin will automatically attempt `http://localhost:3100/heartbeat` for live data.
+Real wake invocation is deliberately not wired in this milestone. The CLI exits unless `--dry-run` is passed. Future work must add a safety/ops review before invoking Paperclip heartbeat endpoints.
 
 ---
 
 ## Roadmap
 
-- [ ] Shared state file reader/writer (WEI implementation)
-- [ ] Decision output surface in UI
-- [ ] Subscription-usage math model integration (WEI-3605)
-- [ ] npm package publish
-- [ ] Alert/notification support (Slack, email)
-- [ ] Multi-project heartbeat aggregation
+- [x] Shared state file reader/writer.
+- [x] Dry-run subscription pacing and fairness decision engine.
+- [x] Fixture usage provider and Paperclip client scaffold.
+- [ ] Live Paperclip heartbeat invocation after explicit safety review.
+- [ ] Dashboard/status surface inside Paperclip UI.
+- [ ] Alert/notification support.
+- [ ] Multi-project heartbeat aggregation.
 
 ---
 
 ## License
 
-GPL-3.0 — see [LICENSE](./LICENSE)
+MIT — see [LICENSE](./LICENSE)
 
 ---
 
 ## Author
 
-Built by [@xXKillerNoobYT](https://github.com/xXKillerNoobYT) for the [Weirdtoo](https://weirdtoocompany.com) AI stack.
+Built by [@xXKillerNoobYT](https://github.com/xXKillerNoobYT) for the Weirdtoo AI stack.

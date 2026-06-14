@@ -1,0 +1,16 @@
+{
+  "providerPoolId": "claude-main-isaac",
+  "collectedAt": "2026-06-15T12:00:00.000Z",
+  "windows": {
+    "session_6h": {
+      "usagePct": 10,
+      "resetAt": "2026-06-15T14:00:00.000Z",
+      "confidence": "reported"
+    },
+    "weekly": {
+      "usagePct": 20,
+      "resetAt": "2026-06-16T00:00:00.000Z",
+      "confidence": "reported"
+    }
+  }
+}
