@@ -183,7 +183,7 @@ npx paperclip-heartbeat-manager decide --dry-run \
   --company-id 803d6ebd-cc2a-415f-8bbf-6a800fa36d20
 ```
 
-The Paperclip source reads `/companies/:companyId/costs/quota-windows`, matches each configured provider pool by `provider` (`anthropic`, `openai`, etc.), and normalizes the reported 5h/6h and weekly quota windows into the scheduler's `session_6h` and `weekly` pacing inputs. If Paperclip reports a provider polling failure or missing window, the scheduler receives missing telemetry and safely holds rather than waking agents blindly.
+The Paperclip source reads `/companies/:companyId/costs/quota-windows`, matches each configured provider pool by `provider` (`anthropic`, `openai`, etc.), and normalizes the reported 5h/6h and weekly quota windows into the scheduler's `session_6h` and `weekly` pacing inputs. The example config includes both an Anthropic/Claude pool and an OpenAI/GPT pool so GPT-backed agents can be paced with the same Paperclip telemetry path. If Paperclip reports a provider polling failure or missing window, the scheduler receives missing telemetry and safely holds rather than waking agents blindly.
 
 To use Paperclip's existing company/agent/issue state for participants instead of writing a static `participants` array, add `--discover-paperclip-participants` (or set `participantsSource: "paperclip"` / `paperclip.participants.enabled: true`). The discovery path reads `/companies/:companyId`, `/agents`, and `/issues`, then builds fair-turn candidates from wake-capable agents and their assigned `todo`, `backlog`, or `in_progress` issues:
 

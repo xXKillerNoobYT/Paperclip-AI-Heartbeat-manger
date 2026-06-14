@@ -1,16 +1,36 @@
 {
-  "providerPoolId": "claude-main-isaac",
-  "collectedAt": "2026-06-15T12:00:00.000Z",
-  "windows": {
-    "session_6h": {
-      "usagePct": 10,
-      "resetAt": "2026-06-15T14:00:00.000Z",
-      "confidence": "reported"
+  "usageSnapshots": [
+    {
+      "providerPoolId": "claude-main-isaac",
+      "collectedAt": "2026-06-15T12:00:00.000Z",
+      "windows": {
+        "session_6h": {
+          "usagePct": 10,
+          "resetAt": "2026-06-15T14:00:00.000Z",
+          "confidence": "reported"
+        },
+        "weekly": {
+          "usagePct": 20,
+          "resetAt": "2026-06-16T00:00:00.000Z",
+          "confidence": "reported"
+        }
+      }
     },
-    "weekly": {
-      "usagePct": 20,
-      "resetAt": "2026-06-16T00:00:00.000Z",
-      "confidence": "reported"
+    {
+      "providerPoolId": "openai-main-isaac",
+      "collectedAt": "2026-06-15T12:00:00.000Z",
+      "windows": {
+        "session_6h": {
+          "usagePct": 35,
+          "resetAt": "2026-06-15T17:00:00.000Z",
+          "confidence": "reported"
+        },
+        "weekly": {
+          "usagePct": 55,
+          "resetAt": "2026-06-18T02:00:00.000Z",
+          "confidence": "reported"
+        }
+      }
     }
-  }
+  ]
 }

@@ -30,6 +30,16 @@
       "sessionHardStopPct": 90,
       "staleTelemetryMaxAgeSec": 300,
       "estimatedWakeCostPct": 2
+    },
+    {
+      "poolId": "openai-main-isaac",
+      "provider": "openai",
+      "finalDayHours": 24,
+      "preFinalWeeklyUnderburnPct": 5,
+      "hardStopAtPct": 98,
+      "sessionHardStopPct": 90,
+      "staleTelemetryMaxAgeSec": 300,
+      "estimatedWakeCostPct": 2
     }
   ],
   "participants": [
@@ -41,6 +51,27 @@
       "role": "CEO",
       "qualified": true,
       "qualificationReason": "Initial GOV-only dry-run CEO participant approved by plugin config.",
+      "weight": 1,
+      "minCooldownSec": 900,
+      "maxRunsPerDay": 12,
+      "hasVisibleWork": true,
+      "turnsExpected": 1,
+      "turnsActual": 0,
+      "maxDeficitCarry": 3,
+      "runCountWindow": {
+        "session_6h": 0,
+        "daily": 0,
+        "weekly": 0
+      }
+    },
+    {
+      "participantId": "wpr2-ceo-openai",
+      "companyId": "803d6ebd-cc2a-415f-8bbf-6a800fa36d20",
+      "agentId": "db5b132e-a4fb-4689-be7c-da9b903c1d70",
+      "providerPoolId": "openai-main-isaac",
+      "role": "CEO",
+      "qualified": true,
+      "qualificationReason": "Initial WPR2 dry-run CEO participant for GPT/OpenAI quota pacing.",
       "weight": 1,
       "minCooldownSec": 900,
       "maxRunsPerDay": 12,
