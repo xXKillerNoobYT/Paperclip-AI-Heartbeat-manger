@@ -8,6 +8,7 @@ export { PaperclipClient } from './paperclip-client.js';
 export { discoverPaperclipParticipants } from './paperclip-discovery.js';
 export { readPaperclipUsage, buildWindows } from './paperclip-usage-provider.js';
 export { decideDryRun } from './scheduler.js';
+export { buildPluginSettings, evaluatePoolSpendPolicy, validatePluginSettings } from './settings.js';
 export {
   acquireLease,
   readSharedState,

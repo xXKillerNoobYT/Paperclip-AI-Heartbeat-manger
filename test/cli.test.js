@@ -22,3 +22,19 @@ test('CLI resolves fixtureUsagePath relative to the config file, not the caller 
   assert.equal(decision.providerPoolId, 'claude-main-isaac');
   assert.equal(decision.invoked, false);
 });
+
+test('CLI prints resolved plugin settings', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'paperclip-heartbeat-manager-settings-'));
+  const bin = resolve('bin/paperclip-heartbeat-manager.js');
+  const config = resolve('examples/heartbeat-manager.config.json');
+
+  const { stdout } = await execFileAsync(process.execPath, [bin, 'settings', '--config', config], {
+    cwd,
+  });
+
+  const settings = JSON.parse(stdout);
+  assert.equal(settings.enabled, true);
+  assert.equal(settings.storage.sharedStatePath, resolve('examples/sync/heartbeat-manager-state.json'));
+  assert.equal(settings.providerPools[0].subscriptionOnly, true);
+  assert.equal(settings.providerPools[0].allowExtraSpend, false);
+});

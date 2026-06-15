@@ -8,11 +8,12 @@ import { buildOperatorReport, renderOperatorDashboardHtml } from '../src/operato
 import { PaperclipClient } from '../src/paperclip-client.js';
 import { discoverPaperclipParticipants } from '../src/paperclip-discovery.js';
 import { decideDryRun } from '../src/scheduler.js';
+import { buildPluginSettings } from '../src/settings.js';
 import { readUsageInputs } from '../src/usage-provider.js';
 
 async function main(argv) {
   const [command, ...args] = argv;
-  if (!['decide', 'report', 'hold-plan'].includes(command)) {
+  if (!['decide', 'report', 'hold-plan', 'settings'].includes(command)) {
     usageAndExit();
   }
 
@@ -36,6 +37,11 @@ async function main(argv) {
   const baseUrl = valueAfter(args, '--paperclip-base-url');
   if (baseUrl) {
     config.paperclip = { ...(config.paperclip ?? {}), baseUrl };
+  }
+
+  if (command === 'settings') {
+    process.stdout.write(`${JSON.stringify(buildPluginSettings(config, { configDir }), null, 2)}\n`);
+    return;
   }
 
   const usagePath = resolvePath(
@@ -217,7 +223,7 @@ function parseList(value) {
 }
 
 function usageAndExit() {
-  process.stderr.write('Usage: paperclip-heartbeat-manager <decide|report|hold-plan> --config <file> (--dry-run|--live --confirm-live <text>) [--usage <fixture>] [--usage-source fixture|paperclip] [--participants-source config|paperclip|--discover-paperclip-participants] [--paperclip-base-url <api>] [--company-id <uuid[,uuid]>] [--provider-pool-id <id>] [--hold-snapshot <file>] [--now <iso>] [--output <file>] [--format html|json] [--decision-log <jsonl>] [--idempotency-store <json>]\n');
+  process.stderr.write('Usage: paperclip-heartbeat-manager <decide|report|hold-plan|settings> --config <file> (--dry-run|--live --confirm-live <text>) [--usage <fixture>] [--usage-source fixture|paperclip] [--participants-source config|paperclip|--discover-paperclip-participants] [--paperclip-base-url <api>] [--company-id <uuid[,uuid]>] [--provider-pool-id <id>] [--hold-snapshot <file>] [--now <iso>] [--output <file>] [--format html|json] [--decision-log <jsonl>] [--idempotency-store <json>]\n');
   process.exit(2);
 }
 
