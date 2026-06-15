@@ -15,6 +15,7 @@
     "./hold-plan": "./src/hold-plan.js",
     "./live-executor": "./src/live-executor.js",
     "./operator-report": "./src/operator-report.js",
+    "./settings": "./src/settings.js",
     "./paperclip-discovery": "./src/paperclip-discovery.js",
     "./paperclip-usage-provider": "./src/paperclip-usage-provider.js",
     "./usage-provider": "./src/usage-provider.js",

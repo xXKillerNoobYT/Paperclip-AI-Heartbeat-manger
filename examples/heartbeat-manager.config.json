@@ -11,6 +11,18 @@
     "companyId": "803d6ebd-cc2a-415f-8bbf-6a800fa36d20",
     "participantsSource": "config"
   },
+  "storage": {
+    "sharedStatePath": "./sync/heartbeat-manager-state.json",
+    "syncDirectory": "./sync",
+    "decisionLogPath": "./logs/heartbeat-manager-decisions.jsonl",
+    "idempotencyStorePath": "./logs/heartbeat-manager-idempotency.json"
+  },
+  "toolDefaults": {
+    "enabledToolsets": ["terminal", "file", "web"],
+    "disabledToolsets": [],
+    "requireExplicitLiveApproval": true,
+    "notes": "Operator-visible defaults for Paperclip plugin settings; live mutation remains gated by live.confirmationText."
+  },
   "live": {
     "enabled": false,
     "confirmationText": "I understand this mutates live Paperclip state",
@@ -24,6 +36,10 @@
     {
       "poolId": "claude-main-isaac",
       "provider": "claude",
+      "subscriptionOnly": true,
+      "allowExtraSpend": false,
+      "extraSpendBudgetCents": 0,
+      "requireCompanyCostLimit": false,
       "finalDayHours": 24,
       "preFinalWeeklyUnderburnPct": 5,
       "hardStopAtPct": 98,
@@ -34,6 +50,10 @@
     {
       "poolId": "openai-main-isaac",
       "provider": "openai",
+      "subscriptionOnly": true,
+      "allowExtraSpend": false,
+      "extraSpendBudgetCents": 0,
+      "requireCompanyCostLimit": false,
       "finalDayHours": 24,
       "preFinalWeeklyUnderburnPct": 5,
       "hardStopAtPct": 98,

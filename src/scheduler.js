@@ -1,5 +1,6 @@
 import { evaluatePacing } from './pacing.js';
 import { selectParticipant } from './fairness.js';
+import { evaluatePoolSpendPolicy } from './settings.js';
 import { evaluateCompanyCostLimit } from './usage-provider.js';
 
 export function decideDryRun({ config, usageSnapshots, costLimits = {}, sourceDiagnostics = [], now = new Date().toISOString() }) {
@@ -9,6 +10,16 @@ export function decideDryRun({ config, usageSnapshots, costLimits = {}, sourceDi
 
   const decisions = [];
   for (const pool of config.pools ?? []) {
+    const spendPolicy = evaluatePoolSpendPolicy(pool);
+    if (spendPolicy.decision === 'hold') {
+      decisions.push(hold(spendPolicy.reason, {
+        providerPoolId: pool.poolId,
+        dryRun: true,
+        spendPolicy,
+      }));
+      continue;
+    }
+
     const telemetryDiagnostic = providerTelemetryDiagnostic(sourceDiagnostics, pool.provider);
     if (telemetryDiagnostic) {
       decisions.push(hold(`provider telemetry unavailable for ${pool.provider}: ${telemetryDiagnostic.reason}`, {

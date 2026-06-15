@@ -39,7 +39,8 @@ Paperclip agents run autonomously, but visibility into whether they're alive, st
 - Paperclip participant discovery that reads live company agents plus assigned actionable issues so the scheduler can use existing board state instead of hand-maintained participant lists.
 - Fixture usage provider and live Paperclip usage/cost-limit adapter contract for dry-run decisions.
 - Dry-run hold-state policy planner plus explicit opt-in live wake/hold/resume executor with idempotency and JSONL decision logs.
-- Unit tests for pacing, fairness, shared-state recovery, and scheduler dry-run behavior.
+- Operator-visible `settings` command that resolves custom synced file locations, provider subscription-only/extra-spend gates, and enabled/disabled tool defaults from the plugin config.
+- Unit tests for pacing, fairness, shared-state recovery, settings validation, and scheduler dry-run behavior.
 
 ---
 
@@ -115,6 +116,15 @@ node ./bin/paperclip-heartbeat-manager.js decide \
   --usage-source paperclip \
   --paperclip-base-url http://localhost:3100/api
 ```
+
+Review resolved plugin settings before enabling live automation:
+
+```bash
+node ./bin/paperclip-heartbeat-manager.js settings \
+  --config ./examples/heartbeat-manager.config.json
+```
+
+The settings output shows operator-controlled paths for the synced shared-state file, decision log, and idempotency store; provider pool gates such as `subscriptionOnly`, `allowExtraSpend`, `extraSpendBudgetCents`, and `requireCompanyCostLimit`; and tool defaults that a Paperclip plugin settings UI can expose without mutating live state. Subscription-only pools fail closed if `allowExtraSpend` is enabled by mistake.
 
 Hold-plan dry run from an operator snapshot:
 
