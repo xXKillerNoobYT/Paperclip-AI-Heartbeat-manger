@@ -79,7 +79,13 @@ function buildPoolAudit({ pool, participants, agentById, snapshot, now }) {
     return holdPool(pool, participants, 'missing telemetry for provider pool');
   }
 
-  const telemetry = readTelemetry({ pool, snapshot, now });
+  let telemetry;
+  try {
+    telemetry = readTelemetry({ pool, snapshot, now });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return holdPool(pool, participants, `incomplete telemetry for provider pool: ${message}`);
+  }
   const bindings = participants.map((participant) => buildBinding(participant, agentById.get(participant.agentId)));
   const recommendation = recommendCadence({ pool, telemetry });
   const proposedPatches = bindings

@@ -139,6 +139,32 @@ test('audit pauses interval heartbeat when provider headroom is too low while pr
   assert.equal(openai.proposedPatches[0].patch.runtimeConfig.heartbeat.wakeOnDemand, true);
 });
 
+test('audit holds without proposing patches when weekly reset telemetry is missing', () => {
+  const config = {
+    enabled: true,
+    pools: [{ poolId: 'openai-subscription', provider: 'openai-codex' }],
+    participants: [{ participantId: 'wpr2-ceo', companyId: 'wpr2', agentId: 'agent-wpr2', providerPoolId: 'openai-subscription', role: 'CEO' }],
+  };
+
+  const audit = buildCadenceAudit({
+    config,
+    agents,
+    usageSnapshots: [{
+      providerPoolId: 'openai-subscription',
+      windows: { weekly: { usagePct: 10 }, session_6h: { usagePct: 10 } },
+      history: { days: 3, heartbeatCount: 1, totalUsagePct: 1 },
+    }],
+    now,
+  });
+
+  const openai = audit.pools.find((pool) => pool.poolId === 'openai-subscription');
+  assert.equal(openai.mode, 'hold');
+  assert.equal(openai.recommendation.action, 'hold');
+  assert.equal(openai.proposedPatches.length, 0);
+  assert.equal(audit.summary.patchCount, 0);
+  assert.match(openai.decisionRecord.reason, /missing weekly resetAt/i);
+});
+
 test('apply mode patches changed CEO heartbeats once and reports unchanged decisions as idempotent', async () => {
   const patched = [];
   const store = new Map(agents.map((agent) => [agent.id, structuredClone(agent)]));
