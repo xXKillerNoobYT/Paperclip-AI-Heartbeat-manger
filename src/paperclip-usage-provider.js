@@ -5,7 +5,7 @@ export async function readPaperclipUsage({ client, companyId, pools, now = new D
   if (!client) throw new Error('readPaperclipUsage requires client');
   if (!companyId) throw new Error('readPaperclipUsage requires companyId');
 
-  if (typeof client.getCostsByAgentModel !== 'function' && typeof client.getQuotaWindows === 'function') {
+  if (typeof client.getQuotaWindows === 'function') {
     const quotaWindows = await client.getQuotaWindows(companyId);
     return (pools ?? []).map((pool) => usageSnapshotForPool(pool, quotaWindows, now));
   }
@@ -48,7 +48,8 @@ export async function readPaperclipUsage({ client, companyId, pools, now = new D
 }
 
 export function usageSnapshotForPool(pool, quotaWindows, now = new Date().toISOString()) {
-  const row = (quotaWindows ?? []).find((item) => normalize(item.provider) === normalize(pool.provider));
+  const expectedProvider = quotaProviderForPool(pool);
+  const row = (quotaWindows ?? []).find((item) => normalizeProvider(item.provider) === expectedProvider);
   if (!row || row.ok === false) {
     return {
       providerPoolId: pool.poolId,
@@ -139,7 +140,7 @@ function aggregateRows(rows, pool) {
 function usageFilters(pool) {
   const source = pool.paperclipUsage ?? {};
   return {
-    provider: normalize(source.provider ?? pool.paperclipProvider ?? pool.provider),
+    provider: normalizeProvider(source.provider ?? pool.paperclipProvider ?? pool.provider),
     biller: normalize(source.biller ?? pool.paperclipBiller ?? pool.biller),
     billingType: normalize(source.billingType ?? pool.paperclipBillingType ?? 'subscription_included'),
     models: normalizeList(source.models ?? pool.paperclipModels),
@@ -148,7 +149,7 @@ function usageFilters(pool) {
 }
 
 function matches(row, filters) {
-  if (filters.provider && normalize(row.provider) !== filters.provider) return false;
+  if (filters.provider && normalizeProvider(row.provider) !== filters.provider) return false;
   if (filters.biller && normalize(row.biller) !== filters.biller) return false;
   if (filters.billingType && normalize(row.billingType) !== filters.billingType) return false;
   if (filters.models.size > 0 && !filters.models.has(normalize(row.model))) return false;
@@ -195,6 +196,24 @@ function usagePct(totalTokens, quotaTokens) {
 
 function normalize(value) {
   return value == null ? null : String(value).trim().toLowerCase();
+}
+
+function quotaProviderForPool(pool) {
+  return normalizeProvider(
+    pool.paperclipUsage?.quotaProvider
+      ?? pool.quotaProvider
+      ?? pool.paperclipUsage?.provider
+      ?? pool.paperclipProvider
+      ?? pool.provider,
+  );
+}
+
+function normalizeProvider(value) {
+  const provider = normalize(value);
+  if (!provider) return provider;
+  if (['openai-codex', 'codex', 'openai'].includes(provider)) return 'openai';
+  if (['claude', 'anthropic'].includes(provider)) return 'anthropic';
+  return provider;
 }
 
 function normalizeList(values) {
