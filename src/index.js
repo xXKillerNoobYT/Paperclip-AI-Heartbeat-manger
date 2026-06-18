@@ -1,5 +1,6 @@
 export { selectParticipant } from './fairness.js';
 export { readFixtureUsage } from './fixture-provider.js';
+export { buildCadenceAudit, applyCadenceRecommendations } from './cadence-scheduler.js';
 export { buildHoldPlan, holdSource } from './hold-plan.js';
 export { assertLiveEnabled, executeLiveDecision } from './live-executor.js';
 export { buildOperatorReport, renderOperatorDashboardHtml } from './operator-report.js';
