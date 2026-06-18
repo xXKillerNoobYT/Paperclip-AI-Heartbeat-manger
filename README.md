@@ -39,8 +39,9 @@ Paperclip agents run autonomously, but visibility into whether they're alive, st
 - Paperclip participant discovery that reads live company agents plus assigned actionable issues so the scheduler can use existing board state instead of hand-maintained participant lists.
 - Fixture usage provider and live Paperclip usage/cost-limit adapter contract for dry-run decisions.
 - Dry-run hold-state policy planner plus explicit opt-in live wake/hold/resume executor with idempotency and JSONL decision logs.
+- Subscription-aware cadence audit/apply API that maps multiple companies onto shared provider pools, estimates three-day usage per heartbeat, recommends CEO interval/max-concurrency/pauses, and emits exact runtimeConfig heartbeat patches.
 - Operator-visible `settings` command that resolves custom synced file locations, provider subscription-only/extra-spend gates, and enabled/disabled tool defaults from the plugin config.
-- Unit tests for pacing, fairness, shared-state recovery, settings validation, and scheduler dry-run behavior.
+- Unit tests for pacing, fairness, shared-state recovery, settings validation, cadence scheduling, and scheduler dry-run behavior.
 
 ---
 
@@ -50,6 +51,7 @@ Paperclip agents run autonomously, but visibility into whether they're alive, st
 bin/
 └── paperclip-heartbeat-manager.js   # CLI entrypoint; dry-run required
 src/
+├── cadence-scheduler.js             # Subscription-aware CEO interval audit/apply patches
 ├── fairness.js                      # Weighted fair-turn participant selection
 ├── fixture-provider.js              # Fixture usage snapshot loader
 ├── index.js                         # Public ESM exports for npm consumers
@@ -125,6 +127,38 @@ node ./bin/paperclip-heartbeat-manager.js settings \
 ```
 
 The settings output shows operator-controlled paths for the synced shared-state file, decision log, and idempotency store; provider pool gates such as `subscriptionOnly`, `allowExtraSpend`, `extraSpendBudgetCents`, and `requireCompanyCostLimit`; and tool defaults that a Paperclip plugin settings UI can expose without mutating live state. Subscription-only pools fail closed if `allowExtraSpend` is enabled by mistake.
+
+### Subscription-aware cadence audit/apply API
+
+The ESM API now exposes `buildCadenceAudit` and `applyCadenceRecommendations` for Paperclip plugin tool handlers that need to adjust CEO interval heartbeat settings instead of only invoking one wake at a time.
+
+Configuration fields:
+
+- `pools[].poolId` and `participants[].providerPoolId` bind one or more companies/CEOs to a shared subscription pool. Capacity is counted once per pool, so WPR2 + local Codex/OpenAI companies can share `openai-subscription` while GOV uses a separate `anthropic-subscription` pool.
+- `targetWeeklyUsagePct` defaults to `50` for normal operation. The scheduler compares current weekly usage and projected weekly burn to this target.
+- `hardStopAtPct` defaults to `98`; at/above this level interval heartbeat is paused while existing `wakeOnDemand` is preserved.
+- `sessionHardStopPct` defaults to `90` for the 5h/6h provider window.
+- `rushFillHours` defaults to `3`. In the final rush-fill window before weekly reset, remaining headroom is used more aggressively by choosing `minIntervalSec`.
+- `minIntervalSec`, `baseIntervalSec`/`ceoIntervalSec`, `maxIntervalSec`, and `maxConcurrentRuns` define the exact heartbeat runtimeConfig recommendation.
+
+Math model:
+
+1. Read Paperclip quota telemetry (`session_6h` and `weekly`) plus a three-day history snapshot (`history.days`, `history.heartbeatCount`, `history.totalUsagePct`, optional `history.byCompany`).
+2. Estimate average usage per heartbeat as `totalUsagePct / heartbeatCount` when available; keep that in the decision record for operator review.
+3. Compute weekly progress from reset time, then project full-week usage as `currentWeeklyUsagePct / weeklyProgress`.
+4. During normal mode, slow to `maxIntervalSec` when projected weekly usage is above the target, speed to `minIntervalSec` when safely below the target trajectory, otherwise use `baseIntervalSec`.
+5. During rush-fill mode, use `minIntervalSec` as long as the pool remains below hard stops.
+6. Emit `proposedPatches[]` with exact `runtimeConfig.heartbeat` changes. Reapplying the same audit is idempotent: unchanged heartbeats are skipped as `heartbeat_already_matches_recommendation`.
+
+Minimal usage:
+
+```js
+import { buildCadenceAudit, applyCadenceRecommendations } from 'paperclip-ai-heartbeat-manager';
+
+const audit = buildCadenceAudit({ config, usageSnapshots, agents, now: new Date().toISOString() });
+// Dry-run/recommend-only: return audit to the operator.
+// Apply mode: call applyCadenceRecommendations({ audit, client }) with a PaperclipClient-like adapter.
+```
 
 Hold-plan dry run from an operator snapshot:
 
