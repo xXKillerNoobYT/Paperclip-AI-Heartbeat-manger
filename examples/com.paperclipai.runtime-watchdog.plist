@@ -9,8 +9,13 @@
 		<string>/usr/bin/python3</string>
 		<string>/Users/IA/GitHub/Paperclip-AI-Heartbeat-manger/bin/paperclip-runtime-watchdog.py</string>
 	</array>
-	<key>StartInterval</key>
-	<integer>600</integer>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>9</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardOutPath</key>
